@@ -5,6 +5,13 @@ name: build
 #   - Weekly cron  -> rebuilds against the latest llama.cpp release.
 #   - Manual run   -> lets you pin a specific llama.cpp ref / llama-swap version.
 #   - Push to main -> rebuilds when the Dockerfile or this workflow change.
+#
+# Every trigger builds the standard image fleet (one image per oneAPI version):
+#   - llama-swap-sycl       on oneAPI 2025.3.3 (upstream's last SYCL-validated)
+#   - llama-swap-sycl-2026  on oneAPI 2026.0.0 (latest)
+#
+# A manual run with a custom image_name (e.g. llama-swap-sycl-next) bypasses the
+# fleet and does a single one-off build using the oneapi_version input.
 
 on:
   workflow_dispatch:
@@ -23,11 +30,11 @@ on:
         options: ["ON", "OFF"]
         default: "ON"
       oneapi_version:
-        description: "intel/deep-learning-essentials base image tag"
-        default: "2025.3.3-0-devel-ubuntu24.04"
+        description: "oneAPI base image tag — ONLY used for a custom image_name one-off; the standard fleet pins its own per image"
+        default: "2026.0.0-devel-ubuntu24.04"
         required: false
       image_name:
-        description: "GHCR package name to publish to (use a different name for experimental builds, e.g. llama-swap-sycl-next)"
+        description: "Set a non-default name (e.g. llama-swap-sycl-next) to do a single experimental build instead of the standard fleet"
         default: "llama-swap-sycl"
         required: false
   schedule:
@@ -40,18 +47,52 @@ on:
       - "config.example.yaml"
       - ".github/workflows/build.yml"
 
-concurrency:
-  # One in-flight build per (branch, image name) — experimental image_name
-  # builds run alongside the default instead of cancelling it.
-  group: build-${{ github.ref }}-${{ github.event.inputs.image_name || 'llama-swap-sycl' }}
-  cancel-in-progress: true
-
 jobs:
+  # Decide what to build: the standard fleet, or a single custom experimental
+  # image when a non-default image_name is passed to a manual run.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      builds: ${{ steps.set.outputs.builds }}
+    steps:
+      - name: Compute build matrix
+        id: set
+        run: |
+          set -euo pipefail
+          IMG="${{ github.event.inputs.image_name }}"
+          ONEAPI="${{ github.event.inputs.oneapi_version }}"
+          if [ -n "$IMG" ] && [ "$IMG" != "llama-swap-sycl" ]; then
+            # One-off experimental build to a custom package.
+            builds=$(jq -cn \
+              --arg img "$IMG" \
+              --arg oa "${ONEAPI:-2026.0.0-devel-ubuntu24.04}" \
+              '[{image:$img, oneapi:$oa}]')
+          else
+            # Standard fleet: one image per oneAPI version, always built.
+            builds='[
+              {"image":"llama-swap-sycl","oneapi":"2025.3.3-0-devel-ubuntu24.04"},
+              {"image":"llama-swap-sycl-2026","oneapi":"2026.0.0-devel-ubuntu24.04"}
+            ]'
+            builds=$(echo "$builds" | jq -c .)
+          fi
+          echo "builds=$builds" >> "$GITHUB_OUTPUT"
+          echo "### Build fleet: $builds" >> "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: setup
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      # Don't let one oneAPI version's failure cancel the other's build.
+      fail-fast: false
+      matrix:
+        build: ${{ fromJSON(needs.setup.outputs.builds) }}
+    # One in-flight build per (branch, image) — the images build independently.
+    concurrency:
+      group: build-${{ github.ref }}-${{ matrix.build.image }}
+      cancel-in-progress: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,8 +121,8 @@ jobs:
             LS=$(gh api repos/mostlygeek/llama-swap/releases/latest --jq .tag_name)
           fi
           LS="${LS#v}"
-          ONEAPI="${{ github.event.inputs.oneapi_version || '2025.3.3-0-devel-ubuntu24.04' }}"
-          IMG="${{ github.event.inputs.image_name || 'llama-swap-sycl' }}"
+          ONEAPI="${{ matrix.build.oneapi }}"
+          IMG="${{ matrix.build.image }}"
           echo "llamacpp_ref=$REF" >> "$GITHUB_OUTPUT"
           echo "ls_ver=$LS"        >> "$GITHUB_OUTPUT"
           echo "oneapi=$ONEAPI"    >> "$GITHUB_OUTPUT"
@@ -115,5 +156,7 @@ jobs:
             GGML_SYCL_F16=${{ github.event.inputs.sycl_f16 || 'ON' }}
             ONEAPI_VERSION=${{ steps.ver.outputs.oneapi }}
             BUILD_DATE=${{ steps.ver.outputs.build_date }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scope the GHA cache per image so the two oneAPI builds don't evict
+          # each other's layers.
+          cache-from: type=gha,scope=${{ matrix.build.image }}
+          cache-to: type=gha,scope=${{ matrix.build.image }},mode=max
