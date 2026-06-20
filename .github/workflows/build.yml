@@ -70,15 +70,15 @@ jobs:
             builds=$(jq -cn \
               --arg img "$IMG" \
               --arg oa "${ONEAPI:-2026.0.0-devel-ubuntu24.04}" \
-              '[{image:$img, oneapi:$oa, cuda:"", cuda_archs:"", dockerfile:"Dockerfile", runner:"ubuntu-latest"}]')
+              '[{image:$img, oneapi:$oa, cuda:"", cuda_archs:"", dockerfile:"Dockerfile", runner:"ubuntu-latest", platform:"linux/amd64"}]')
           else
             # Standard fleet.
             builds='[
-              {"image":"llama-swap-sycl",        "oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest"},
-              {"image":"llama-swap-sycl-2026",    "oneapi":"2026.0.0-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest"},
-              {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest"},
-              {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm"},
-              {"image":"llama-swap-cuda13-blackwell-arm64","oneapi":"","cuda":"13.3.0","cuda_archs":"100","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm"}
+              {"image":"llama-swap-sycl",        "oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64"},
+              {"image":"llama-swap-sycl-2026",    "oneapi":"2026.0.0-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64"},
+              {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64"},
+              {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64"},
+              {"image":"llama-swap-cuda13-blackwell-arm64","oneapi":"","cuda":"13.3.0","cuda_archs":"100","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64"}
             ]'
             builds=$(echo "$builds" | jq -c .)
           fi
@@ -159,6 +159,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.build.dockerfile }}
+          platforms: ${{ matrix.build.platform }}
           push: true
           provenance: false
           tags: |
