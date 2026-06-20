@@ -1,17 +1,19 @@
 name: build
 
-# Builds llama-swap + llama.cpp (Intel SYCL) from source and pushes to GHCR.
+# Builds llama-swap + llama.cpp from source and pushes to GHCR.
 #
-#   - Weekly cron  -> rebuilds against the latest llama.cpp release.
-#   - Manual run   -> lets you pin a specific llama.cpp ref / llama-swap version.
-#   - Push to main -> rebuilds when the Dockerfile or this workflow change.
+#   - Cron every 2 days -> rebuilds against the latest llama.cpp release.
+#   - Manual run        -> lets you pin a specific llama.cpp ref / llama-swap version.
+#   - Push to main      -> rebuilds when a Dockerfile or this workflow change.
 #
-# Every trigger builds the standard image fleet (one image per oneAPI version):
-#   - llama-swap-sycl       on oneAPI 2025.3.3 (upstream's last SYCL-validated)
-#   - llama-swap-sycl-2026  on oneAPI 2026.0.0 (latest)
+# Every trigger builds the standard image fleet:
+#   - llama-swap-sycl        Intel SYCL on oneAPI 2025.3.3 (upstream's last SYCL-validated)
+#   - llama-swap-sycl-2026   Intel SYCL on oneAPI 2026.0.0 (latest)
+#   - llama-swap-cuda13      NVIDIA CUDA 13.3 (amd64)
+#   - llama-swap-cuda13-arm64  NVIDIA CUDA 13.3 (arm64, native runner)
 #
 # A manual run with a custom image_name (e.g. llama-swap-sycl-next) bypasses the
-# fleet and does a single one-off build using the oneapi_version input.
+# fleet and does a single one-off SYCL build using the oneapi_version input.
 
 on:
   workflow_dispatch:
@@ -44,6 +46,7 @@ on:
     branches: [main]
     paths:
       - "Dockerfile"
+      - "Dockerfile.cuda"
       - "config.example.yaml"
       - ".github/workflows/build.yml"
 
@@ -62,16 +65,18 @@ jobs:
           IMG="${{ github.event.inputs.image_name }}"
           ONEAPI="${{ github.event.inputs.oneapi_version }}"
           if [ -n "$IMG" ] && [ "$IMG" != "llama-swap-sycl" ]; then
-            # One-off experimental build to a custom package.
+            # One-off experimental SYCL build to a custom package.
             builds=$(jq -cn \
               --arg img "$IMG" \
               --arg oa "${ONEAPI:-2026.0.0-devel-ubuntu24.04}" \
-              '[{image:$img, oneapi:$oa}]')
+              '[{image:$img, oneapi:$oa, cuda:"", dockerfile:"Dockerfile", runner:"ubuntu-latest"}]')
           else
-            # Standard fleet: one image per oneAPI version, always built.
+            # Standard fleet.
             builds='[
-              {"image":"llama-swap-sycl","oneapi":"2025.3.3-0-devel-ubuntu24.04"},
-              {"image":"llama-swap-sycl-2026","oneapi":"2026.0.0-devel-ubuntu24.04"}
+              {"image":"llama-swap-sycl",          "oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "dockerfile":"Dockerfile",      "runner":"ubuntu-latest"},
+              {"image":"llama-swap-sycl-2026",      "oneapi":"2026.0.0-devel-ubuntu24.04",  "cuda":"",     "dockerfile":"Dockerfile",      "runner":"ubuntu-latest"},
+              {"image":"llama-swap-cuda13",         "oneapi":"",                             "cuda":"13.3.0","dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest"},
+              {"image":"llama-swap-cuda13-arm64",   "oneapi":"",                             "cuda":"13.3.0","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm"}
             ]'
             builds=$(echo "$builds" | jq -c .)
           fi
@@ -80,7 +85,7 @@ jobs:
 
   build:
     needs: setup
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.build.runner }}
     permissions:
       contents: read
       packages: write
@@ -122,13 +127,20 @@ jobs:
           fi
           LS="${LS#v}"
           ONEAPI="${{ matrix.build.oneapi }}"
+          CUDA="${{ matrix.build.cuda }}"
           IMG="${{ matrix.build.image }}"
+          if [ -n "$CUDA" ]; then
+            BASE="CUDA $CUDA"
+          else
+            BASE="oneAPI $ONEAPI"
+          fi
           echo "llamacpp_ref=$REF" >> "$GITHUB_OUTPUT"
           echo "ls_ver=$LS"        >> "$GITHUB_OUTPUT"
           echo "oneapi=$ONEAPI"    >> "$GITHUB_OUTPUT"
+          echo "cuda=$CUDA"        >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${{ github.repository_owner }}/$IMG" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-          echo "### Building \`$IMG\` — llama.cpp \`$REF\` + llama-swap \`$LS\` on oneAPI \`$ONEAPI\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Building \`$IMG\` — llama.cpp \`$REF\` + llama-swap \`$LS\` on $BASE" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -144,6 +156,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ matrix.build.dockerfile }}
           push: true
           provenance: false
           tags: |
@@ -155,6 +168,7 @@ jobs:
             LS_VER=${{ steps.ver.outputs.ls_ver }}
             GGML_SYCL_F16=${{ github.event.inputs.sycl_f16 || 'ON' }}
             ONEAPI_VERSION=${{ steps.ver.outputs.oneapi }}
+            CUDA_VERSION=${{ steps.ver.outputs.cuda }}
             BUILD_DATE=${{ steps.ver.outputs.build_date }}
           # Scope the GHA cache per image so the two oneAPI builds don't evict
           # each other's layers.

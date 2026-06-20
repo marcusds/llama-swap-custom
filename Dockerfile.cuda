@@ -1,0 +1,97 @@
+# llama-swap + llama.cpp (NVIDIA CUDA) built from source.
+#
+# Build args of interest:
+#   LLAMACPP_REF   git ref to build (tag like b9495, a commit sha, or a branch)
+#   LS_VER         llama-swap release version to bundle (no leading 'v')
+#   CUDA_VERSION   NVIDIA CUDA base image tag (e.g. 13.3.0)
+
+ARG CUDA_VERSION=13.3.0
+
+# ─────────────────────────────────────────────────────────────────────────
+# Build stage: compile llama.cpp for CUDA from source
+# ─────────────────────────────────────────────────────────────────────────
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
+
+ARG LLAMACPP_REF=master
+
+RUN apt-get update && \
+    apt-get install -y git cmake libssl-dev wget ca-certificates build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Shallow-clone exactly the requested ref (tag / branch / sha).
+RUN git init -q && \
+    git remote add origin https://github.com/ggml-org/llama.cpp.git && \
+    git fetch --depth=1 origin "${LLAMACPP_REF}" && \
+    git checkout -q FETCH_HEAD && \
+    git rev-parse HEAD > /app/LLAMACPP_GIT_SHA
+
+# Dynamic backends (BACKEND_DL) so the CUDA + all CPU variants are loadable
+# .so files alongside the binary, matching the upstream server image layout.
+RUN cmake -B build \
+        -DGGML_NATIVE=OFF \
+        -DGGML_CUDA=ON \
+        -DGGML_BACKEND_DL=ON \
+        -DGGML_CPU_ALL_VARIANTS=ON \
+        -DLLAMA_BUILD_TESTS=OFF && \
+    cmake --build build --config Release -j"$(nproc)"
+
+# Collect the binary + every shared lib it dlopens into one dir.
+RUN mkdir -p /app/lib && \
+    find build -name "*.so*" -exec cp -P {} /app/lib \; && \
+    mkdir -p /app/full && \
+    cp build/bin/llama-server /app/full/
+
+# ─────────────────────────────────────────────────────────────────────────
+# Runtime base: slim CUDA runtime (no compiler/dev headers)
+# ─────────────────────────────────────────────────────────────────────────
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS base
+
+RUN apt-get update && \
+    apt-get install -y libgomp1 curl && \
+    apt autoremove -y && apt clean -y && \
+    rm -rf /tmp/* /var/tmp/* && \
+    find /var/cache/apt/archives /var/lib/apt/lists -not -name lock -type f -delete && \
+    find /var/cache -type f -delete
+
+# ─────────────────────────────────────────────────────────────────────────
+# Final image: llama-server + libs + llama-swap proxy
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS server
+
+ARG TARGETARCH=amd64
+ARG LS_VER=222
+ARG LLAMACPP_REF=master
+ARG BUILD_DATE=N/A
+ARG CUDA_VERSION=13.3.0
+
+LABEL org.opencontainers.image.title="llama-swap-cuda" \
+      org.opencontainers.image.description="llama-swap + llama.cpp (NVIDIA CUDA) built from source" \
+      org.opencontainers.image.source="https://github.com/ggml-org/llama.cpp" \
+      io.llamacpp.ref="${LLAMACPP_REF}" \
+      io.llamaswap.version="${LS_VER}" \
+      io.cuda.version="${CUDA_VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
+
+ENV LLAMA_ARG_HOST=0.0.0.0
+ENV PATH="/app:${PATH}"
+
+# llama-server + its dlopen'd backends share /app; the binary's $ORIGIN rpath
+# finds them, matching the upstream server image layout.
+COPY --from=build /app/lib/ /app
+COPY --from=build /app/full/llama-server /app
+COPY --from=build /app/LLAMACPP_GIT_SHA /app/LLAMACPP_GIT_SHA
+
+# Drop in the llama-swap release binary.
+RUN curl -fsSL -o /tmp/ls.tar.gz \
+        "https://github.com/mostlygeek/llama-swap/releases/download/v${LS_VER}/llama-swap_${LS_VER}_linux_${TARGETARCH}.tar.gz" && \
+    tar -zxf /tmp/ls.tar.gz -C /app llama-swap && \
+    rm /tmp/ls.tar.gz
+
+COPY config.example.yaml /app/config.yaml
+
+WORKDIR /app
+
+HEALTHCHECK CMD curl -f http://localhost:8080/ || exit 1
+ENTRYPOINT [ "/app/llama-swap", "-config", "/app/config.yaml", "-listen", "0.0.0.0:8080" ]
