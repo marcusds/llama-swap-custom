@@ -38,10 +38,9 @@ RUN ARCH_FLAG="" && \
         -DGGML_NATIVE=OFF \
         -DGGML_CUDA=ON \
         -DGGML_BACKEND_DL=ON \
-        -DGGML_CPU_ALL_VARIANTS=ON \
         -DLLAMA_BUILD_TESTS=OFF \
         ${ARCH_FLAG} && \
-    cmake --build build --config Release -j"$(nproc)" -- --output-sync=none
+    cmake --build build --config Release -j"$(nproc)"
 
 # Collect the binary + every shared lib it dlopens into one dir.
 RUN mkdir -p /app/lib && \
