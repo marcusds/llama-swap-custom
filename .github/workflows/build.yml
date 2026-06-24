@@ -2,7 +2,7 @@ name: build
 
 # Builds llama-swap + llama.cpp from source and pushes to GHCR.
 #
-#   - Cron every 2 days -> rebuilds against the latest llama.cpp release.
+#   - Cron every day    -> rebuilds against the latest llama.cpp release.
 #   - Manual run        -> lets you pin a specific llama.cpp ref / llama-swap version.
 #   - Push to main      -> rebuilds when a Dockerfile or this workflow change.
 #
@@ -41,8 +41,8 @@ on:
         default: "llama-swap-sycl"
         required: false
   schedule:
-    # Every 2 days at 06:00 UTC — track the latest llama.cpp release.
-    - cron: "0 6 */2 * *"
+    # Every day at 06:00 UTC — track the latest llama.cpp release.
+    - cron: "0 6 * * *"
   push:
     branches: [main]
     paths:
