@@ -7,11 +7,42 @@
 #
 # Build args of interest:
 #   LLAMACPP_REF   git ref to build (tag like b9495, a commit sha, or a branch)
-#   LS_VER         llama-swap release version to bundle (no leading 'v')
+#   LS_REPO        llama-swap git repo to build from
+#   LS_REF         llama-swap git ref to build (branch, tag, or sha)
 #   GGML_SYCL_F16  ON/OFF  -- enable half-precision SYCL kernels
 #   ONEAPI_VERSION intel/deep-learning-essentials base image tag
 
 ARG ONEAPI_VERSION=2025.3.3-0-devel-ubuntu24.04
+ARG LS_REPO=https://github.com/marcusds/llama-swap.git
+ARG LS_REF=memory-budget
+
+# ─────────────────────────────────────────────────────────────────────────
+# Build stage: build llama-swap from source (our fork/branch, not a release)
+# ─────────────────────────────────────────────────────────────────────────
+FROM golang:1.26-bookworm AS ls-build
+
+ARG LS_REPO
+ARG LS_REF
+ARG TARGETARCH=amd64
+
+RUN apt-get update && \
+    apt-get install -y git curl ca-certificates && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN git init -q && \
+    git remote add origin "${LS_REPO}" && \
+    git fetch --depth=1 origin "${LS_REF}" && \
+    git checkout -q FETCH_HEAD && \
+    git rev-parse HEAD > /src/LLAMASWAP_GIT_SHA
+
+RUN cd ui-svelte && npm ci && npm run build
+
+RUN GOOS=linux GOARCH=${TARGETARCH} go build \
+        -ldflags="-X main.commit=$(git rev-parse --short HEAD) -X main.version=custom_$(git rev-parse --short HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        -o /src/llama-swap .
 
 # ─────────────────────────────────────────────────────────────────────────
 # Build stage: compile llama.cpp for SYCL from source
@@ -91,7 +122,8 @@ RUN apt-get update && \
     find /var/cache -type f -delete
 
 # ─────────────────────────────────────────────────────────────────────────
-# Final image: llama-server + libs + llama-swap proxy
+# Final image (upstream): llama-server + libs + the mostlygeek/llama-swap
+# release binary
 # ─────────────────────────────────────────────────────────────────────────
 FROM base AS server
 
@@ -121,6 +153,44 @@ RUN curl -fsSL -o /tmp/ls.tar.gz \
         "https://github.com/mostlygeek/llama-swap/releases/download/v${LS_VER}/llama-swap_${LS_VER}_linux_${TARGETARCH}.tar.gz" && \
     tar -zxf /tmp/ls.tar.gz -C /app llama-swap && \
     rm /tmp/ls.tar.gz
+
+COPY config.example.yaml /app/config.yaml
+
+WORKDIR /app
+
+HEALTHCHECK CMD curl -f http://localhost:8080/ || exit 1
+ENTRYPOINT [ "/app/llama-swap", "-config", "/app/config.yaml", "-listen", "0.0.0.0:8080" ]
+
+# ─────────────────────────────────────────────────────────────────────────
+# Final image (fork): llama-server + libs + llama-swap built from our
+# fork/branch instead of an upstream release
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS server-fork
+
+ARG TARGETARCH=amd64
+ARG LS_REPO=https://github.com/marcusds/llama-swap.git
+ARG LS_REF=memory-budget
+ARG LLAMACPP_REF=master
+ARG BUILD_DATE=N/A
+
+LABEL org.opencontainers.image.title="llama-swap-sycl" \
+      org.opencontainers.image.description="llama-swap + llama.cpp (Intel SYCL) built from source" \
+      org.opencontainers.image.source="https://github.com/ggml-org/llama.cpp" \
+      io.llamacpp.ref="${LLAMACPP_REF}" \
+      io.llamaswap.repo="${LS_REPO}" \
+      io.llamaswap.ref="${LS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
+
+ENV LLAMA_ARG_HOST=0.0.0.0
+ENV PATH="/app:${PATH}"
+
+COPY --from=build /app/lib/ /app
+COPY --from=build /app/full/llama-server /app
+COPY --from=build /app/LLAMACPP_GIT_SHA /app/LLAMACPP_GIT_SHA
+
+# Drop in the llama-swap binary built from our fork/branch.
+COPY --from=ls-build /src/llama-swap /app/llama-swap
+COPY --from=ls-build /src/LLAMASWAP_GIT_SHA /app/LLAMASWAP_GIT_SHA
 
 COPY config.example.yaml /app/config.yaml
 

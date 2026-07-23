@@ -13,8 +13,13 @@ name: build
 #   - llama-swap-cuda13-arm64   NVIDIA CUDA 13.3 (arm64, all GPU architectures)
 #   - llama-swap-cuda13-blackwell-arm64  NVIDIA CUDA 13.3 (arm64, Blackwell SM 10.3 only — DGX Spark GB10)
 #
+# Each image in the fleet is built twice:
+#   - upstream variant  (target: server)      bundles the mostlygeek/llama-swap release binary, tagged normally
+#   - fork variant       (target: server-fork) builds llama-swap from our fork/branch, tagged with a "-fork" suffix
+#
 # A manual run with a custom image_name (e.g. llama-swap-sycl-next) bypasses the
-# fleet and does a single one-off SYCL build using the oneapi_version input.
+# fleet and does a single one-off SYCL build (upstream variant only) using the
+# oneapi_version input.
 
 on:
   workflow_dispatch:
@@ -24,8 +29,16 @@ on:
         default: "latest"
         required: false
       llama_swap_version:
-        description: "llama-swap release to bundle ('latest' or a version like 222)"
+        description: "llama-swap release to bundle for the upstream variant ('latest' or a version like 222)"
         default: "latest"
+        required: false
+      ls_repo:
+        description: "llama-swap git repo to build from for the fork variant"
+        default: "https://github.com/marcusds/llama-swap.git"
+        required: false
+      ls_ref:
+        description: "llama-swap git ref to build for the fork variant (branch, tag, or sha)"
+        default: "memory-budget"
         required: false
       sycl_f16:
         description: "Enable GGML_SYCL_F16 half-precision kernels"
@@ -66,21 +79,25 @@ jobs:
           IMG="${{ github.event.inputs.image_name }}"
           ONEAPI="${{ github.event.inputs.oneapi_version }}"
           if [ -n "$IMG" ] && [ "$IMG" != "llama-swap-sycl" ]; then
-            # One-off experimental SYCL build to a custom package.
+            # One-off experimental SYCL build to a custom package (upstream variant only).
             builds=$(jq -cn \
               --arg img "$IMG" \
               --arg oa "${ONEAPI:-2026.0.0-devel-ubuntu24.04}" \
-              '[{image:$img, oneapi:$oa, cuda:"", cuda_archs:"", dockerfile:"Dockerfile", runner:"ubuntu-latest", platform:"linux/amd64", targetarch:"amd64"}]')
+              '[{image:$img, variant:"upstream", target:"server", oneapi:$oa, cuda:"", cuda_archs:"", dockerfile:"Dockerfile", runner:"ubuntu-latest", platform:"linux/amd64", targetarch:"amd64"}]')
           else
             # Standard fleet.
-            builds='[
+            fleet='[
               {"image":"llama-swap-sycl",        "oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
               {"image":"llama-swap-sycl-2026",    "oneapi":"2026.0.0-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
               {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
               {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
               {"image":"llama-swap-cuda13-blackwell-arm64","oneapi":"","cuda":"13.3.0","cuda_archs":"103","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"}
             ]'
-            builds=$(echo "$builds" | jq -c .)
+            # Each fleet entry becomes two builds: upstream release + our fork/branch.
+            builds=$(echo "$fleet" | jq -c '[.[] | . as $b | [
+              ($b + {variant:"upstream", target:"server"}),
+              ($b + {variant:"fork", target:"server-fork"})
+            ]] | flatten')
           fi
           echo "builds=$builds" >> "$GITHUB_OUTPUT"
           echo "### Build fleet: $builds" >> "$GITHUB_STEP_SUMMARY"
@@ -96,9 +113,9 @@ jobs:
       fail-fast: false
       matrix:
         build: ${{ fromJSON(needs.setup.outputs.builds) }}
-    # One in-flight build per (branch, image) — the images build independently.
+    # One in-flight build per (branch, image, variant) — upstream/fork build independently.
     concurrency:
-      group: build-${{ github.ref }}-${{ matrix.build.image }}
+      group: build-${{ github.ref }}-${{ matrix.build.image }}-${{ matrix.build.variant }}
       cancel-in-progress: true
     steps:
       - name: Checkout
@@ -123,26 +140,42 @@ jobs:
           if [ "$REF" = "latest" ] || [ -z "$REF" ]; then
             REF=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq .tag_name)
           fi
-          LS="${{ github.event.inputs.llama_swap_version || 'latest' }}"
-          if [ "$LS" = "latest" ] || [ -z "$LS" ]; then
-            LS=$(gh api repos/mostlygeek/llama-swap/releases/latest --jq .tag_name)
+          LS_VER="${{ github.event.inputs.llama_swap_version || 'latest' }}"
+          if [ "$LS_VER" = "latest" ] || [ -z "$LS_VER" ]; then
+            LS_VER=$(gh api repos/mostlygeek/llama-swap/releases/latest --jq .tag_name)
           fi
-          LS="${LS#v}"
+          LS_VER="${LS_VER#v}"
+          LS_REPO="${{ github.event.inputs.ls_repo || 'https://github.com/marcusds/llama-swap.git' }}"
+          LS_REF="${{ github.event.inputs.ls_ref || 'memory-budget' }}"
           ONEAPI="${{ matrix.build.oneapi }}"
           CUDA="${{ matrix.build.cuda }}"
           IMG="${{ matrix.build.image }}"
+          VARIANT="${{ matrix.build.variant }}"
           if [ -n "$CUDA" ]; then
             BASE="CUDA $CUDA"
           else
             BASE="oneAPI $ONEAPI"
           fi
+          if [ "$VARIANT" = "fork" ]; then
+            TAG_SUFFIX="-fork"
+            LS_TAG=$(echo "$LS_REF" | tr -c 'a-zA-Z0-9._-' '-')
+            SRC_DESC="llama-swap \`$LS_REPO@$LS_REF\`"
+          else
+            TAG_SUFFIX=""
+            LS_TAG="$LS_VER"
+            SRC_DESC="llama-swap \`v$LS_VER\`"
+          fi
           echo "llamacpp_ref=$REF" >> "$GITHUB_OUTPUT"
-          echo "ls_ver=$LS"        >> "$GITHUB_OUTPUT"
+          echo "ls_ver=$LS_VER"    >> "$GITHUB_OUTPUT"
+          echo "ls_tag=$LS_TAG"    >> "$GITHUB_OUTPUT"
+          echo "ls_repo=$LS_REPO"  >> "$GITHUB_OUTPUT"
+          echo "ls_ref=$LS_REF"    >> "$GITHUB_OUTPUT"
+          echo "tag_suffix=$TAG_SUFFIX" >> "$GITHUB_OUTPUT"
           echo "oneapi=$ONEAPI"    >> "$GITHUB_OUTPUT"
           echo "cuda=$CUDA"        >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${{ github.repository_owner }}/$IMG" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-          echo "### Building \`$IMG\` — llama.cpp \`$REF\` + llama-swap \`$LS\` on $BASE" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Building \`$IMG\` ($VARIANT) — llama.cpp \`$REF\` + $SRC_DESC on $BASE" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -159,23 +192,26 @@ jobs:
         with:
           context: .
           file: ${{ matrix.build.dockerfile }}
+          target: ${{ matrix.build.target }}
           platforms: ${{ matrix.build.platform }}
           push: true
           provenance: false
           tags: |
-            ${{ steps.ver.outputs.image }}:latest
-            ${{ steps.ver.outputs.image }}:${{ steps.ver.outputs.llamacpp_ref }}
-            ${{ steps.ver.outputs.image }}:${{ steps.ver.outputs.llamacpp_ref }}-ls${{ steps.ver.outputs.ls_ver }}
+            ${{ steps.ver.outputs.image }}:latest${{ steps.ver.outputs.tag_suffix }}
+            ${{ steps.ver.outputs.image }}:${{ steps.ver.outputs.llamacpp_ref }}${{ steps.ver.outputs.tag_suffix }}
+            ${{ steps.ver.outputs.image }}:${{ steps.ver.outputs.llamacpp_ref }}-ls${{ steps.ver.outputs.ls_tag }}${{ steps.ver.outputs.tag_suffix }}
           build-args: |
             LLAMACPP_REF=${{ steps.ver.outputs.llamacpp_ref }}
             LS_VER=${{ steps.ver.outputs.ls_ver }}
+            LS_REPO=${{ steps.ver.outputs.ls_repo }}
+            LS_REF=${{ steps.ver.outputs.ls_ref }}
             GGML_SYCL_F16=${{ github.event.inputs.sycl_f16 || 'ON' }}
             ONEAPI_VERSION=${{ steps.ver.outputs.oneapi }}
             CUDA_VERSION=${{ steps.ver.outputs.cuda }}
             CUDA_ARCHITECTURES=${{ matrix.build.cuda_archs }}
             TARGETARCH=${{ matrix.build.targetarch }}
             BUILD_DATE=${{ steps.ver.outputs.build_date }}
-          # Scope the GHA cache per image so the two oneAPI builds don't evict
+          # Scope the GHA cache per (image, variant) so builds don't evict
           # each other's layers.
-          cache-from: type=gha,scope=${{ matrix.build.image }}
-          cache-to: type=gha,scope=${{ matrix.build.image }},mode=max
+          cache-from: type=gha,scope=${{ matrix.build.image }}-${{ matrix.build.variant }}
+          cache-to: type=gha,scope=${{ matrix.build.image }}-${{ matrix.build.variant }},mode=max
