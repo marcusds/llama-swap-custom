@@ -111,6 +111,10 @@ jobs:
     strategy:
       # Don't let one oneAPI version's failure cancel the other's build.
       fail-fast: false
+      # Cap in-flight builds. Ten jobs finishing together all push multi-GB
+      # mode=max layers into the 10 GB Actions cache quota, and an entry that
+      # gets evicted mid-upload fails its export with "not_found".
+      max-parallel: 3
       matrix:
         build: ${{ fromJSON(needs.setup.outputs.builds) }}
     # One in-flight build per (branch, image, variant) — upstream/fork build independently.
@@ -214,4 +218,6 @@ jobs:
           # Scope the GHA cache per (image, variant) so builds don't evict
           # each other's layers.
           cache-from: type=gha,scope=${{ matrix.build.image }}-${{ matrix.build.variant }}
-          cache-to: type=gha,scope=${{ matrix.build.image }}-${{ matrix.build.variant }},mode=max
+          # ignore-error: a cache export evicted by the 10 GB quota must not
+          # fail a build whose image already pushed successfully.
+          cache-to: type=gha,scope=${{ matrix.build.image }}-${{ matrix.build.variant }},mode=max,ignore-error=true
