@@ -79,6 +79,20 @@ RUN apt-get update && \
     apt-get -o Dpkg::Options::="--force-overwrite" install -y ./level-zero.deb ./level-zero-devel.deb && \
     rm -f /tmp/level-zero.deb /tmp/level-zero-devel.deb
 
+# Intel dropped oneDNN from the deep-learning-essentials image in 2026.0.0
+# (2025.3.3 still bundles it). find_package(DNNL) then fails, ggml-sycl quietly
+# loses the fused SDPA path, and nothing errors -- measured on an Arc Pro B50,
+# an image without oneDNN did pp512 at 897 t/s vs 944 t/s with it. Reinstall
+# from the oneAPI apt repo, which is already configured in the base image.
+RUN if [ -z "$(find /opt/intel -name dnnl-config.cmake -print -quit)" ]; then \
+        echo "oneDNN absent from base image -- installing intel-oneapi-dnnl-devel" && \
+        apt-get update && \
+        apt-get install -y intel-oneapi-dnnl-devel && \
+        rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "oneDNN bundled with base image"; \
+    fi
+
 WORKDIR /app
 
 # Shallow-clone exactly the requested ref (tag / branch / sha).
@@ -102,6 +116,10 @@ RUN set -e; \
     if [ -n "${GGML_SYCL_DEVICE_ARCH}" ]; then \
         echo "AOT build targeting ${GGML_SYCL_DEVICE_ARCH}"; \
         OPT+=("-DGGML_SYCL_DEVICE_ARCH=${GGML_SYCL_DEVICE_ARCH}"); \
+    fi; \
+    DNNL_CFG="$(find /opt/intel -name dnnl-config.cmake -print -quit)"; \
+    if [ -n "$DNNL_CFG" ]; then \
+        OPT+=("-DDNNL_DIR=$(dirname "$DNNL_CFG")"); \
     fi; \
     cmake -B build \
         -DGGML_NATIVE=OFF \
@@ -172,6 +190,22 @@ RUN apt-get update && \
     rm -rf /tmp/* /var/tmp/* && \
     find /var/cache/apt/archives /var/lib/apt/lists -not -name lock -type f -delete && \
     find /var/cache -type f -delete
+
+# Runtime half of the oneDNN restoration above. libggml-sycl.so has no $ORIGIN
+# in its RUNPATH and resolves libdnnl via the loader path, but on 2026.x the
+# oneDNN lib dir is not on LD_LIBRARY_PATH even once installed -- so register it
+# with ldconfig. Asserted, because a missing libdnnl at runtime would only show
+# up as a backend that fails to load.
+RUN if [ -z "$(find /opt/intel -name 'libdnnl.so*' -print -quit)" ]; then \
+        apt-get update && \
+        apt-get install -y intel-oneapi-runtime-dnnl && \
+        apt clean -y && rm -rf /var/lib/apt/lists/*; \
+    fi && \
+    dirname "$(find /opt/intel -name 'libdnnl.so*' -print -quit)" > /etc/ld.so.conf.d/onednn.conf && \
+    ldconfig && \
+    if ! ldconfig -p | grep -q libdnnl; then \
+        echo "ERROR: libdnnl is not resolvable at runtime"; exit 1; \
+    fi
 
 # ── Runtime tuning defaults, applied to every final image ────────────────
 #
