@@ -91,7 +91,8 @@ RUN if [ "${GGML_SYCL_F16}" = "ON" ]; then \
 RUN mkdir -p /app/lib && \
     find build -name "*.so*" -exec cp -P {} /app/lib \; && \
     mkdir -p /app/full && \
-    cp build/bin/llama-server /app/full/
+    cp build/bin/llama-server /app/full/ && \
+    cp build/bin/llama-bench /app/full/
 
 # ─────────────────────────────────────────────────────────────────────────
 # Runtime base: oneAPI + Intel GPU compute runtime (Level Zero / OpenCL / IGC)
@@ -146,6 +147,7 @@ ENV PATH="/app:${PATH}"
 # finds them, matching the upstream server image layout.
 COPY --from=build /app/lib/ /app
 COPY --from=build /app/full/llama-server /app
+COPY --from=build /app/full/llama-bench /app
 COPY --from=build /app/LLAMACPP_GIT_SHA /app/LLAMACPP_GIT_SHA
 
 # Drop in the llama-swap release binary.
@@ -186,6 +188,7 @@ ENV PATH="/app:${PATH}"
 
 COPY --from=build /app/lib/ /app
 COPY --from=build /app/full/llama-server /app
+COPY --from=build /app/full/llama-bench /app
 COPY --from=build /app/LLAMACPP_GIT_SHA /app/LLAMACPP_GIT_SHA
 
 # Drop in the llama-swap binary built from our fork/branch.
