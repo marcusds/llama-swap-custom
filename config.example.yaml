@@ -5,6 +5,14 @@ healthCheckTimeout: 120
 
 models:
   example-qwen:
+    # The SYCL oneMKL GEMM flash-attention path (XMX prefill) engages only with
+    # flash-attn on + a *_0/*_1 quantized KV cache + batch >= 1024 + prompt
+    # >= 1024 tokens. Measured on an Arc Pro B50 at 4k prompt it was NOT a win:
+    # pp4096 was 894 t/s with f16 KV vs 882 t/s with q8_0 KV + batch 1024.
+    # So quantized KV is left off here -- enable it to buy VRAM (roughly half
+    # the KV cache), not prompt speed, and re-measure at your real context
+    # depth before assuming it helps:
+    #   --batch-size 1024 --cache-type-k q8_0 --cache-type-v q8_0
     cmd: |-
       /app/llama-server
         --host 0.0.0.0
