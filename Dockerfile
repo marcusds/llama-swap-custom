@@ -93,6 +93,31 @@ RUN if [ -z "$(find /opt/intel -name dnnl-config.cmake -print -quit)" ]; then \
         echo "oneDNN bundled with base image"; \
     fi
 
+# AOT (-fsycl-targets=spir64_gen) shells out to ocloc, Intel's offline GPU
+# compiler. The 2025.3.x oneAPI images bundle it at /usr/bin/ocloc; 2026.x does
+# not, and icpx then fails the link of libggml-sycl.so with a bare
+# "gen compiler command failed" after only a -Waot-tool-not-found warning.
+# Install the same compute-runtime the final image uses, so the ISA we generate
+# matches the driver that will run it. JIT builds do not need ocloc.
+ARG IGC_VERSION=v2.38.2
+ARG IGC_VERSION_FULL=2_2.38.2+22051
+ARG COMPUTE_RUNTIME_VERSION=26.27.39122.11
+ARG COMPUTE_RUNTIME_VERSION_FULL=26.27.39122.11-0
+ARG IGDGMM_VERSION=22.10.0
+RUN if [ -n "${GGML_SYCL_DEVICE_ARCH}" ] && ! command -v ocloc >/dev/null; then \
+        echo "AOT requested but ocloc missing -- installing compute-runtime ${COMPUTE_RUNTIME_VERSION}" && \
+        mkdir -p /tmp/ocloc && cd /tmp/ocloc && \
+        wget -q "https://github.com/intel/intel-graphics-compiler/releases/download/${IGC_VERSION}/intel-igc-core-${IGC_VERSION_FULL}_amd64.deb" && \
+        wget -q "https://github.com/intel/intel-graphics-compiler/releases/download/${IGC_VERSION}/intel-igc-opencl-${IGC_VERSION_FULL}_amd64.deb" && \
+        wget -q "https://github.com/intel/compute-runtime/releases/download/${COMPUTE_RUNTIME_VERSION}/intel-ocloc_${COMPUTE_RUNTIME_VERSION_FULL}_amd64.deb" && \
+        wget -q "https://github.com/intel/compute-runtime/releases/download/${COMPUTE_RUNTIME_VERSION}/libigdgmm12_${IGDGMM_VERSION}_amd64.deb" && \
+        dpkg --install *.deb && \
+        cd / && rm -rf /tmp/ocloc; \
+    fi && \
+    if [ -n "${GGML_SYCL_DEVICE_ARCH}" ] && ! command -v ocloc >/dev/null; then \
+        echo "ERROR: AOT requested but ocloc is still unavailable"; exit 1; \
+    fi
+
 WORKDIR /app
 
 # Shallow-clone exactly the requested ref (tag / branch / sha).
