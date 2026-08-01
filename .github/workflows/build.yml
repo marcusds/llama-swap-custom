@@ -74,8 +74,11 @@ on:
     paths:
       - "Dockerfile"
       - "Dockerfile.cuda"
-      - "config.example.yaml"
       - ".github/workflows/build.yml"
+      # config.example.yaml is deliberately NOT a trigger. It is only the
+      # fallback config baked into the image, and real deployments bind-mount
+      # their own over it -- rebuilding 12 images for a comment edit is not
+      # worth it. The next scheduled or Dockerfile-driven build picks it up.
 
 jobs:
   # Decide what to build: the standard fleet, or a single custom experimental
