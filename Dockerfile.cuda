@@ -45,7 +45,10 @@ FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
 
 ARG LLAMACPP_REF=master
 # Leave empty to let cmake auto-detect all supported architectures.
-# Set to e.g. "100" to target only Blackwell (SM 10.0).
+# Set to e.g. "121" to target only DGX Spark / GB10 (SM 12.1). Datacenter
+# Blackwell (B200/GB200) is a different family: SM 10.0/10.3, not 12.x —
+# don't conflate the two, PTX from one family JITs onto the other but skips
+# any arch-specific codegen and pays a JIT-compile cost at first kernel use.
 ARG CUDA_ARCHITECTURES=""
 
 RUN apt-get update && \

@@ -24,7 +24,12 @@ name: build
 # All other images use IGC 2.38.2 / NEO 26.27.
 #   - llama-swap-cuda13         NVIDIA CUDA 13.3 (amd64, all GPU architectures)
 #   - llama-swap-cuda13-arm64   NVIDIA CUDA 13.3 (arm64, all GPU architectures)
-#   - llama-swap-cuda13-blackwell-arm64  NVIDIA CUDA 13.3 (arm64, Blackwell SM 10.3 only — DGX Spark GB10)
+#   - llama-swap-cuda13-spark-arm64  NVIDIA CUDA 13.3 (arm64, SM 12.1 only — DGX Spark GB10).
+#                                     Not "blackwell": SM 12.1 (GB10, consumer/edge) is a
+#                                     different family from datacenter Blackwell (SM 10.0/10.3,
+#                                     B200/GB200) — a cubin built for one won't run natively on
+#                                     the other, only via PTX-JIT with none of the arch-specific
+#                                     codegen.
 #
 # Each image in the fleet is built twice:
 #   - upstream variant  (target: server)      bundles the mostlygeek/llama-swap release binary, tagged normally
@@ -109,7 +114,7 @@ jobs:
               {"image":"llama-swap-sycl-multigpu","oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","neo":"legacy"},
               {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
               {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
-              {"image":"llama-swap-cuda13-blackwell-arm64","oneapi":"","cuda":"13.3.0","cuda_archs":"103","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"}
+              {"image":"llama-swap-cuda13-spark-arm64","oneapi":"","cuda":"13.3.0","cuda_archs":"121","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"}
             ]'
             # Each fleet entry becomes two builds: upstream release + our fork/branch.
             builds=$(echo "$fleet" | jq -c '[.[] | . as $b | [
