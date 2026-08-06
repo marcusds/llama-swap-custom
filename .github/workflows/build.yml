@@ -29,7 +29,10 @@ name: build
 #                                     different family from datacenter Blackwell (SM 10.0/10.3,
 #                                     B200/GB200) — a cubin built for one won't run natively on
 #                                     the other, only via PTX-JIT with none of the arch-specific
-#                                     codegen.
+#                                     codegen. Also pins the CPU backend to armv9.2-a+sve2+i8mm+
+#                                     dotprod+fp16 (Grace's Cortex-X925/A725) since arm64 gets no
+#                                     runtime multi-variant dispatch from GGML_BACKEND_DL the way
+#                                     x86 does.
 #   - llama-swap-cuda13-rtx50       NVIDIA CUDA 13.3 (amd64, SM 12.0 only — GeForce RTX 50
 #                                     series / 5090). SM 12.0, not 12.1: same consumer-Blackwell
 #                                     generation as GB10 but a distinct compute capability
@@ -117,10 +120,10 @@ jobs:
               {"image":"llama-swap-sycl-2026",    "oneapi":"2026.1.2-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
               {"image":"llama-swap-sycl-bmg",     "oneapi":"2026.1.2-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","sycl_arch":"bmg_g21"},
               {"image":"llama-swap-sycl-multigpu","oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","neo":"legacy"},
-              {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
-              {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
-              {"image":"llama-swap-cuda13-spark-arm64","oneapi":"","cuda":"13.3.0","cuda_archs":"121","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
-              {"image":"llama-swap-cuda13-rtx50",      "oneapi":"","cuda":"13.3.0","cuda_archs":"120","dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"}
+              {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.3.1","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
+              {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.1","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
+              {"image":"llama-swap-cuda13-spark-arm64","oneapi":"","cuda":"13.3.1","cuda_archs":"121","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64","cpu_arch":"armv9.2-a+sve2+i8mm+dotprod+fp16"},
+              {"image":"llama-swap-cuda13-rtx50",      "oneapi":"","cuda":"13.3.1","cuda_archs":"120","dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"}
             ]'
             # Each fleet entry becomes two builds: upstream release + our fork/branch.
             builds=$(echo "$fleet" | jq -c '[.[] | . as $b | [
@@ -264,6 +267,7 @@ jobs:
             ONEAPI_VERSION=${{ steps.ver.outputs.oneapi }}
             CUDA_VERSION=${{ steps.ver.outputs.cuda }}
             CUDA_ARCHITECTURES=${{ matrix.build.cuda_archs }}
+            GGML_CPU_ARM_ARCH=${{ matrix.build.cpu_arch }}
             TARGETARCH=${{ matrix.build.targetarch }}
             BUILD_DATE=${{ steps.ver.outputs.build_date }}
           # Scope the GHA cache per (image, variant) so builds don't evict

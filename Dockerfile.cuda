@@ -51,6 +51,15 @@ ARG LLAMACPP_REF=master
 # any arch-specific codegen and pays a JIT-compile cost at first kernel use.
 ARG CUDA_ARCHITECTURES=""
 
+# Leave empty for the portable baseline arm64 CPU build. Set to e.g.
+# "armv9.2-a+sve2+i8mm+dotprod+fp16" to compile the CPU backend for a specific
+# core (DGX Spark's Grace CPU: Cortex-X925/A725, both Armv9.2-A with SVE2).
+# GGML_BACKEND_DL's multi-variant runtime dispatch (GGML_CPU_ALL_VARIANTS)
+# only covers x86 -- on arm64 it produces a single generic libggml-cpu.so with
+# none of these extensions, so this is the only way to get them on this arch.
+# Only use this on an image scoped to one known CPU; it won't run elsewhere.
+ARG GGML_CPU_ARM_ARCH=""
+
 RUN apt-get update && \
     apt-get install -y git cmake libssl-dev wget ca-certificates build-essential && \
     rm -rf /var/lib/apt/lists/*
@@ -68,13 +77,16 @@ RUN git init -q && \
 # .so files alongside the binary, matching the upstream server image layout.
 RUN ARCH_FLAG="" && \
     [ -n "${CUDA_ARCHITECTURES}" ] && ARCH_FLAG="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}" ; \
+    CPU_ARCH_FLAG="" && \
+    [ -n "${GGML_CPU_ARM_ARCH}" ] && CPU_ARCH_FLAG="-DGGML_CPU_ARM_ARCH=${GGML_CPU_ARM_ARCH}" ; \
     cmake -B build \
         -DGGML_NATIVE=OFF \
         -DGGML_CUDA=ON \
         -DGGML_CUDA_FA_ALL_QUANTS=ON \
         -DGGML_BACKEND_DL=ON \
         -DLLAMA_BUILD_TESTS=OFF \
-        ${ARCH_FLAG} && \
+        ${ARCH_FLAG} \
+        ${CPU_ARCH_FLAG} && \
     cmake --build build --config Release -j"$(nproc)"
 
 # Collect the binary + every shared lib it dlopens into one dir.
