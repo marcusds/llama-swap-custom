@@ -107,6 +107,45 @@ Irrelevant either way: `n_kv < 1024` or `Q->ne[1] < 32` — MKL never engages, s
 Upstream-worthy: MKL preempting oneDNN on F16 costs 30% here. One env var
 reproduces it.
 
+### Update 2026-08-05 — the gap is gone
+
+Upstream PR [#25852](https://github.com/ggml-org/llama.cpp/pull/25852) (merged
+2026-08-04, `sycl: parallelize the non-contiguous concat kernel`, claimed
++9.4% pp2048) landed in the daily build alongside further oneAPI/AOT/driver
+bumps (oneAPI 2026.1.2, NEO 26.27.39122.11, IGC 2.38.2 — see the
+`llama-swap-sycl` repo's Dockerfile args on any build after 2026-08-04). The
+two changes shipped in the same image, so the following can't be attributed to
+#25852 alone — but the net effect on this GPU is that **the MKL/oneDNN
+priority bug from §3 no longer matters in practice.**
+
+Re-ran `kvsweep2.sh` in full (5 models × f16/q8_0 × MKL on/off × pp2048/pp8192,
+20260805, image `llama-swap-sycl-bmg:latest` @ llama.cpp `6ea215d` / b10276,
+0/0 or baseline-2/2 ffmpeg contention on every row — clean run). All 32
+MKL-on-vs-off deltas were **within ±1.5%**, matching `repeat.sh`'s ~0.4% noise
+floor:
+
+| model | KV | pp | MKL=1 | MKL=0 | delta |
+|---|---|---|---|---|---|
+| medgemma-4b | f16 | pp8192 | 2249.98 | 2244.51 | +0.2% |
+| medgemma-4b | q8_0 | pp8192 | 2259.84 | 2259.20 | +0.03% |
+| gemma-4-e4b | f16 | pp8192 | 1593.02 | 1586.83 | +0.4% |
+| gemma-4-e2b-obl | f16 | pp8192 | 2711.22 | 2749.21 | -1.4% |
+| orpheus-3b | f16 | pp8192 | 2017.02 | 2014.56 | +0.1% |
+
+(full 32-row output: `~/llama-swap-bench/kvsweep3-20260805.log`)
+
+For reference, the same medgemma-4b/pp8192/f16/MKL=1 cell was **1722** on
+2026-08-01 and is **2249.98** now — a +31% jump with MKL forced *on*, on top of
+oneDNN barely moving (2237 → 2246). Whatever combination of #25852 and the
+driver bump did this, it raised MKL to meet oneDNN rather than the reverse.
+
+**The §3 rule is now moot on any build after ~2026-08-04.** The 7 models'
+`GGML_SYCL_ENABLE_MKL_FA=0` overrides are harmless (MKL is no longer worse) but
+also no longer necessary — see §8. Re-verify the gap is still closed before
+trusting this on a different GPU or a future upstream bump; this was measured
+on the Arc Pro B50 only, and the doc's own §3 caveat about hardware-specific
+kernel ranking still applies.
+
 ---
 
 ## 4. Why performance changed
@@ -117,6 +156,7 @@ reproduces it.
 | 2026-07-15 | oneDNN XMX flash attention lands (#25222) | **no benefit** — no oneDNN in the image |
 | 2026-07-31 | oneMKL XMX flash attention lands (#25025) | **benefit** — oneMKL was always linked (`find_package(MKL REQUIRED)`) |
 | 2026-08-01 | this work: oneDNN restored + `MKL_FA=0` on f16 models | oneDNN path unlocked |
+| 2026-08-04 | SYCL concat kernel parallelized (#25852) + oneAPI 2026.1.2/NEO 26.27/IGC 2.38.2 bump | MKL/oneDNN gap closes — see §3 update |
 
 medgemma-4b pp8192 f16: TILE 1326 → MKL 1722 (+30%) → oneDNN 2237 (+69%).
 
@@ -182,6 +222,11 @@ they are no-ops on 2025.3.3.
 
 ## 8. Open items
 
+- **`GGML_SYCL_ENABLE_MKL_FA=0` on the 7 f16 models is now dead weight** (§3
+  update, 2026-08-05) — the priority bug it worked around no longer measures
+  as a regression on this build. Safe to remove for config simplicity, not
+  urgent since it's harmless. Re-benchmark before removing if a lot of time
+  has passed, in case a future upstream change reopens the gap.
 - q8_0 rollout: **not applied**, and recommended against per §5. If you want it
   anyway, add `--cache-type-k q8_0 --cache-type-v q8_0` to those 7 models **and
   remove their `GGML_SYCL_ENABLE_MKL_FA=0`** — quantized KV needs MKL on.
