@@ -5,6 +5,8 @@ name: build
 #   - Cron every day    -> rebuilds against the latest llama.cpp release.
 #   - Manual run        -> lets you pin a specific llama.cpp ref / llama-swap version.
 #   - Push to main      -> rebuilds when a Dockerfile or this workflow change.
+#   - workflow_call     -> watch-llamacpp.yml calls us reactively when upstream
+#                          lands a commit in a backend we ship (see image_filter).
 #
 # Every trigger builds the standard image fleet:
 #   - llama-swap-sycl           Intel SYCL on oneAPI 2025.3.3 (upstream's last SYCL-validated)
@@ -53,6 +55,45 @@ on:
         description: "Set a non-default name (e.g. llama-swap-sycl-next) to do a single experimental build instead of the standard fleet"
         default: "llama-swap-sycl"
         required: false
+      image_filter:
+        description: "Which fleet images to build: 'all', or a comma-separated list of name substrings like 'sycl' / 'cuda' / 'sycl,cuda'"
+        default: "all"
+        required: false
+  # Same inputs as above, for watch-llamacpp.yml to call us reactively.
+  workflow_call:
+    inputs:
+      llamacpp_ref:
+        type: string
+        default: "latest"
+        required: false
+      llama_swap_version:
+        type: string
+        default: "latest"
+        required: false
+      ls_repo:
+        type: string
+        default: "https://github.com/marcusds/llama-swap.git"
+        required: false
+      ls_ref:
+        type: string
+        default: "memory-budget"
+        required: false
+      sycl_f16:
+        type: string
+        default: "ON"
+        required: false
+      oneapi_version:
+        type: string
+        default: "2026.0.0-devel-ubuntu24.04"
+        required: false
+      image_name:
+        type: string
+        default: "llama-swap-sycl"
+        required: false
+      image_filter:
+        type: string
+        default: "all"
+        required: false
   schedule:
     # Every day at 06:00 UTC — track the latest llama.cpp release.
     - cron: "0 6 * * *"
@@ -76,8 +117,9 @@ jobs:
         id: set
         run: |
           set -euo pipefail
-          IMG="${{ github.event.inputs.image_name }}"
-          ONEAPI="${{ github.event.inputs.oneapi_version }}"
+          IMG="${{ inputs.image_name }}"
+          ONEAPI="${{ inputs.oneapi_version }}"
+          FILTER="${{ inputs.image_filter || 'all' }}"
           if [ -n "$IMG" ] && [ "$IMG" != "llama-swap-sycl" ]; then
             # One-off experimental SYCL build to a custom package (upstream variant only).
             builds=$(jq -cn \
@@ -93,11 +135,23 @@ jobs:
               {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
               {"image":"llama-swap-cuda13-blackwell-arm64","oneapi":"","cuda":"13.3.0","cuda_archs":"103","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"}
             ]'
+            # image_filter narrows the fleet to the images whose name contains one
+            # of the given substrings, so a reactive SYCL-only trigger doesn't drag
+            # the five CUDA builds along with it.
+            if [ -n "$FILTER" ] && [ "$FILTER" != "all" ]; then
+              fleet=$(echo "$fleet" | jq -c --arg f "$FILTER" \
+                '($f | split(",") | map(ascii_downcase | gsub("^\\s+|\\s+$";""))) as $pats
+                 | map(select(.image as $i | $pats | any(. as $p | $i | contains($p))))')
+            fi
             # Each fleet entry becomes two builds: upstream release + our fork/branch.
             builds=$(echo "$fleet" | jq -c '[.[] | . as $b | [
               ($b + {variant:"upstream", target:"server"}),
               ($b + {variant:"fork", target:"server-fork"})
             ]] | flatten')
+          fi
+          if [ "$(echo "$builds" | jq 'length')" -eq 0 ]; then
+            echo "image_filter '$FILTER' matched no fleet images" >&2
+            exit 1
           fi
           echo "builds=$builds" >> "$GITHUB_OUTPUT"
           echo "### Build fleet: $builds" >> "$GITHUB_STEP_SUMMARY"
@@ -140,17 +194,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          REF="${{ github.event.inputs.llamacpp_ref || 'latest' }}"
+          REF="${{ inputs.llamacpp_ref || 'latest' }}"
           if [ "$REF" = "latest" ] || [ -z "$REF" ]; then
             REF=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq .tag_name)
           fi
-          LS_VER="${{ github.event.inputs.llama_swap_version || 'latest' }}"
+          LS_VER="${{ inputs.llama_swap_version || 'latest' }}"
           if [ "$LS_VER" = "latest" ] || [ -z "$LS_VER" ]; then
             LS_VER=$(gh api repos/mostlygeek/llama-swap/releases/latest --jq .tag_name)
           fi
           LS_VER="${LS_VER#v}"
-          LS_REPO="${{ github.event.inputs.ls_repo || 'https://github.com/marcusds/llama-swap.git' }}"
-          LS_REF="${{ github.event.inputs.ls_ref || 'memory-budget' }}"
+          LS_REPO="${{ inputs.ls_repo || 'https://github.com/marcusds/llama-swap.git' }}"
+          LS_REF="${{ inputs.ls_ref || 'memory-budget' }}"
           ONEAPI="${{ matrix.build.oneapi }}"
           CUDA="${{ matrix.build.cuda }}"
           IMG="${{ matrix.build.image }}"
@@ -209,7 +263,7 @@ jobs:
             LS_VER=${{ steps.ver.outputs.ls_ver }}
             LS_REPO=${{ steps.ver.outputs.ls_repo }}
             LS_REF=${{ steps.ver.outputs.ls_ref }}
-            GGML_SYCL_F16=${{ github.event.inputs.sycl_f16 || 'ON' }}
+            GGML_SYCL_F16=${{ inputs.sycl_f16 || 'ON' }}
             ONEAPI_VERSION=${{ steps.ver.outputs.oneapi }}
             CUDA_VERSION=${{ steps.ver.outputs.cuda }}
             CUDA_ARCHITECTURES=${{ matrix.build.cuda_archs }}

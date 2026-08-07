@@ -1,0 +1,155 @@
+name: watch-llamacpp
+
+# Reactive rebuilds: poll llama.cpp and rebuild a backend's images as soon as
+# upstream lands a commit in that backend, instead of waiting for the 06:00
+# nightly in build.yml.
+#
+# How "is there something new for us?" is answered, per backend family:
+#
+#   1. Read io.llamacpp.ref off the currently published GHCR image (:latest).
+#      That label is the llama.cpp ref the image was actually built from, so the
+#      watcher needs no state file of its own — the registry is the state.
+#   2. Ask llama.cpp for commits touching that backend's source directory since
+#      that ref's commit date.
+#   3. Any hits -> rebuild that family against the newest llama.cpp release.
+#
+# Matching on changed paths rather than release notes is deliberate: every
+# llama.cpp release body links a "Ubuntu x64 (SYCL FP32)" asset, so grepping the
+# notes for "sycl" would fire on every single release.
+#
+# The nightly in build.yml still runs and still covers everything this misses:
+# shared ggml/llama.cpp changes, base image updates, and llama-swap releases.
+
+on:
+  schedule:
+    # Every 3 hours, offset off the 06:00 nightly in build.yml. Both workflows
+    # share build.yml's per-(image,variant) concurrency group with
+    # cancel-in-progress, so overlapping them would just cancel the nightly
+    # mid-build. llama.cpp cuts a release roughly hourly, so a 3-hour poll picks
+    # up a backend change soon after it lands without rebuilding on every commit.
+    - cron: "0 2,5,8,11,14,17,20,23 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build regardless of whether upstream touched the backend (useful for testing this workflow)"
+        type: boolean
+        default: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      # Comma-separated fleet filter for build.yml, e.g. "sycl" / "sycl,cuda".
+      # Empty means nothing upstream is worth a rebuild.
+      filter: ${{ steps.detect.outputs.filter }}
+      llamacpp_ref: ${{ steps.detect.outputs.llamacpp_ref }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Look for upstream backend changes
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          UPSTREAM=ggml-org/llama.cpp
+          LATEST=$(gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name)
+          echo "llamacpp_ref=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Latest llama.cpp release: $LATEST"
+
+          # family:reference image:backend source path
+          FAMILIES="
+          sycl:llama-swap-sycl:ggml/src/ggml-sycl
+          cuda:llama-swap-cuda13:ggml/src/ggml-cuda
+          "
+
+          matched=()
+          {
+            echo "## Upstream watch — latest llama.cpp release \`$LATEST\`"
+            echo
+            echo "| backend | built from | new commits | rebuild |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for entry in $FAMILIES; do
+            family="${entry%%:*}"
+            rest="${entry#*:}"
+            image="${rest%%:*}"
+            path="${rest#*:}"
+
+            # The ref the published image was built from. Missing image or missing
+            # label (never built, or built before the label existed) -> rebuild.
+            built=$(docker buildx imagetools inspect \
+                      "ghcr.io/$OWNER/$image:latest" \
+                      --format '{{ index .Image.Config.Labels "io.llamacpp.ref" }}' 2>/dev/null || true)
+
+            if [ "$FORCE" = "true" ]; then
+              matched+=("$family")
+              echo "| $family | \`${built:-unknown}\` | — | yes (forced) |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            if [ -z "$built" ] || [ "$built" = "<no value>" ]; then
+              matched+=("$family")
+              echo "| $family | _unknown_ | — | yes (no published ref) |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            if [ "$built" = "$LATEST" ]; then
+              echo "| $family | \`$built\` | 0 (already latest) | no |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            # Commit the published image was built from, so we can window the
+            # search to "everything upstream did to this backend since then".
+            since=$(gh api "repos/$UPSTREAM/commits/$built" --jq .commit.committer.date 2>/dev/null || true)
+            if [ -z "$since" ]; then
+              matched+=("$family")
+              echo "| $family | \`$built\` (unresolvable) | — | yes |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            built_sha=$(gh api "repos/$UPSTREAM/commits/$built" --jq .sha)
+
+            # since= is inclusive of the boundary commit, so drop it by sha.
+            commits=$(gh api --paginate \
+              "repos/$UPSTREAM/commits?sha=master&path=$path&since=$since&per_page=100" \
+              --jq ".[] | select(.sha != \"$built_sha\") | \"\\(.sha[0:8]) \\(.commit.message | split(\"\\n\")[0])\"")
+
+            n=$(printf '%s' "$commits" | grep -c . || true)
+            if [ "$n" -gt 0 ]; then
+              matched+=("$family")
+              echo "$family: $n new commit(s) under $path"
+              printf '%s\n' "$commits"
+              titles=$(printf '%s' "$commits" | sed 's/^/• /' | paste -sd '<br>' -)
+              echo "| $family | \`$built\` | $n<br>$titles | **yes** |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $family | \`$built\` | 0 | no |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+          filter=$(IFS=,; echo "${matched[*]:-}")
+          echo "filter=$filter" >> "$GITHUB_OUTPUT"
+          echo "Fleet filter: '${filter:-<none>}'"
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.filter != ''
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build.yml
+    with:
+      llamacpp_ref: ${{ needs.detect.outputs.llamacpp_ref }}
+      image_filter: ${{ needs.detect.outputs.filter }}
+    secrets: inherit
