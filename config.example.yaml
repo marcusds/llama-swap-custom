@@ -5,6 +5,19 @@ healthCheckTimeout: 120
 
 models:
   example-qwen:
+    # The SYCL oneMKL flash-attention path (XMX GEMM prefill, llama.cpp #25025)
+    # turns on by itself whenever flash-attn is on and n_kv >= 1024. It needs no
+    # build flag and no quantized KV -- docs/backend/SYCL.md still claims a
+    # quantized cache and batch >= 1024 are required, but the merged code
+    # (ggml-sycl/fattn.cpp) gates only on GQA, head_dim, and n_kv.
+    #
+    # It is not a uniform win. Measured on an Arc Pro B50, Qwen3.5-9B, pp8192:
+    #   f16  KV, MKL on  848 t/s      f16  KV, MKL off  916 t/s   <- MKL hurts
+    #   q8_0 KV, MKL on  839 t/s      q8_0 KV, MKL off  687 t/s   <- MKL helps
+    # So: with a quantized KV cache leave it alone (it is worth +22% at 8k);
+    # with an f16 cache it costs ~7% at 8k and is worth disabling per model:
+    #   env: ["GGML_SYCL_ENABLE_MKL_FA=0"]
+    # Re-measure on your own model -- this was one GQA model on one GPU.
     cmd: |-
       /app/llama-server
         --host 0.0.0.0

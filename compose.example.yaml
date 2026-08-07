@@ -3,6 +3,9 @@
 name: llamacpp
 services:
   llama-swap:
+    # Portable JIT build, runs on any Intel GPU. On Battlemage, the AOT image
+    # ghcr.io/marcusds/llama-swap-sycl-bmg:latest starts llama-server in 4s
+    # instead of 53s (~49s saved per model swap, identical throughput).
     image: ghcr.io/marcusds/llama-swap-sycl:latest
     restart: unless-stopped
     ports:
@@ -19,10 +22,13 @@ services:
         permissions: rwm
     environment:
       - RUST_LOG=info
-      - SYCL_DEVICE_FILTER=level_zero:gpu
+      # SYCL_DEVICE_FILTER is deprecated and ignored by current oneAPI --
+      # ONEAPI_DEVICE_SELECTOR is the replacement.
       - ONEAPI_DEVICE_SELECTOR=level_zero:gpu
       - LIBVA_DRIVER_NAME=iHD
-      - ZES_ENABLE_SYSMAN=1
+      # ZES_ENABLE_SYSMAN and UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS are baked
+      # into the image. Do NOT add SYCL_CACHE_PERSISTENT=1 -- it segfaults
+      # llama-server on Battlemage; see the Dockerfile for details.
     group_add:
       - video
       - "993"

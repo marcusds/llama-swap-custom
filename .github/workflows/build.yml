@@ -8,9 +8,22 @@ name: build
 #   - workflow_call     -> watch-llamacpp.yml calls us reactively when upstream
 #                          lands a commit in a backend we ship (see image_filter).
 #
-# Every trigger builds the standard image fleet:
+# Every trigger builds the standard image fleet (unless image_filter narrows it):
 #   - llama-swap-sycl           Intel SYCL on oneAPI 2025.3.3 (upstream's last SYCL-validated)
-#   - llama-swap-sycl-2026      Intel SYCL on oneAPI 2026.0.0 (latest)
+#   - llama-swap-sycl-2026      Intel SYCL on oneAPI 2026.1.2 (latest)
+#   - llama-swap-sycl-bmg       oneAPI 2026.1.2, AOT-compiled for Battlemage
+#                               (bmg_g21: Arc B580/B570, Arc Pro B50/B60). No
+#                               SPIR-V JIT at llama-server start -- measured
+#                               4s to ready vs 53s -- but runs ONLY on Battlemage.
+#   - llama-swap-sycl-multigpu  Same as llama-swap-sycl but pinned to the older
+#                               IGC 2.20.5 / NEO 25.40 stack. An escape hatch for
+#                               multi-GPU hosts: NEO 26.27 *should* contain the
+#                               multi-GPU fix (merged after 26.18 was cut), but
+#                               that is inferred from release dates, so keep a
+#                               known-good fallback until someone confirms on
+#                               two dGPUs.
+#
+# All other images use IGC 2.38.2 / NEO 26.27.
 #   - llama-swap-cuda13         NVIDIA CUDA 13.3 (amd64, all GPU architectures)
 #   - llama-swap-cuda13-arm64   NVIDIA CUDA 13.3 (arm64, all GPU architectures)
 #   - llama-swap-cuda13-blackwell-arm64  NVIDIA CUDA 13.3 (arm64, Blackwell SM 10.3 only — DGX Spark GB10)
@@ -49,7 +62,7 @@ on:
         default: "ON"
       oneapi_version:
         description: "oneAPI base image tag — ONLY used for a custom image_name one-off; the standard fleet pins its own per image"
-        default: "2026.0.0-devel-ubuntu24.04"
+        default: "2026.1.2-devel-ubuntu24.04"
         required: false
       image_name:
         description: "Set a non-default name (e.g. llama-swap-sycl-next) to do a single experimental build instead of the standard fleet"
@@ -84,7 +97,7 @@ on:
         required: false
       oneapi_version:
         type: string
-        default: "2026.0.0-devel-ubuntu24.04"
+        default: "2026.1.2-devel-ubuntu24.04"
         required: false
       image_name:
         type: string
@@ -102,8 +115,11 @@ on:
     paths:
       - "Dockerfile"
       - "Dockerfile.cuda"
-      - "config.example.yaml"
       - ".github/workflows/build.yml"
+      # config.example.yaml is deliberately NOT a trigger. It is only the
+      # fallback config baked into the image, and real deployments bind-mount
+      # their own over it -- rebuilding 12 images for a comment edit is not
+      # worth it. The next scheduled or Dockerfile-driven build picks it up.
 
 jobs:
   # Decide what to build: the standard fleet, or a single custom experimental
@@ -124,20 +140,22 @@ jobs:
             # One-off experimental SYCL build to a custom package (upstream variant only).
             builds=$(jq -cn \
               --arg img "$IMG" \
-              --arg oa "${ONEAPI:-2026.0.0-devel-ubuntu24.04}" \
+              --arg oa "${ONEAPI:-2026.1.2-devel-ubuntu24.04}" \
               '[{image:$img, variant:"upstream", target:"server", oneapi:$oa, cuda:"", cuda_archs:"", dockerfile:"Dockerfile", runner:"ubuntu-latest", platform:"linux/amd64", targetarch:"amd64"}]')
           else
             # Standard fleet.
             fleet='[
               {"image":"llama-swap-sycl",        "oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
-              {"image":"llama-swap-sycl-2026",    "oneapi":"2026.0.0-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
+              {"image":"llama-swap-sycl-2026",    "oneapi":"2026.1.2-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
+              {"image":"llama-swap-sycl-bmg",     "oneapi":"2026.1.2-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","sycl_arch":"bmg_g21"},
+              {"image":"llama-swap-sycl-multigpu","oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","neo":"legacy"},
               {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
               {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.0","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
               {"image":"llama-swap-cuda13-blackwell-arm64","oneapi":"","cuda":"13.3.0","cuda_archs":"103","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"}
             ]'
             # image_filter narrows the fleet to the images whose name contains one
-            # of the given substrings, so a reactive SYCL-only trigger doesn't drag
-            # the five CUDA builds along with it.
+            # of the given substrings, so a reactive "sycl" trigger builds the four
+            # SYCL images without dragging the three CUDA ones along with it.
             if [ -n "$FILTER" ] && [ "$FILTER" != "all" ]; then
               fleet=$(echo "$fleet" | jq -c --arg f "$FILTER" \
                 '($f | split(",") | map(ascii_downcase | gsub("^\\s+|\\s+$";""))) as $pats
@@ -223,6 +241,26 @@ jobs:
             LS_TAG="$LS_VER"
             SRC_DESC="llama-swap \`v$LS_VER\`"
           fi
+          # Intel GPU userspace stack. Current stack by default; a fleet entry
+          # sets neo:"legacy" to fall back to the older validated set, which is
+          # what multi-GPU hosts need (llama.cpp#21747, compute-runtime#921).
+          if [ "${{ matrix.build.neo }}" = "legacy" ]; then
+            {
+              echo "igc=v2.20.5"
+              echo "igc_full=2_2.20.5+19972"
+              echo "neo=25.40.35563.10"
+              echo "neo_full=25.40.35563.10-0"
+              echo "igdgmm=22.8.2"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "igc=v2.38.2"
+              echo "igc_full=2_2.38.2+22051"
+              echo "neo=26.27.39122.11"
+              echo "neo_full=26.27.39122.11-0"
+              echo "igdgmm=22.10.0"
+            } >> "$GITHUB_OUTPUT"
+          fi
           echo "llamacpp_ref=$REF" >> "$GITHUB_OUTPUT"
           echo "ls_ver=$LS_VER"    >> "$GITHUB_OUTPUT"
           echo "ls_tag=$LS_TAG"    >> "$GITHUB_OUTPUT"
@@ -264,6 +302,12 @@ jobs:
             LS_REPO=${{ steps.ver.outputs.ls_repo }}
             LS_REF=${{ steps.ver.outputs.ls_ref }}
             GGML_SYCL_F16=${{ inputs.sycl_f16 || 'ON' }}
+            GGML_SYCL_DEVICE_ARCH=${{ matrix.build.sycl_arch }}
+            IGC_VERSION=${{ steps.ver.outputs.igc }}
+            IGC_VERSION_FULL=${{ steps.ver.outputs.igc_full }}
+            COMPUTE_RUNTIME_VERSION=${{ steps.ver.outputs.neo }}
+            COMPUTE_RUNTIME_VERSION_FULL=${{ steps.ver.outputs.neo_full }}
+            IGDGMM_VERSION=${{ steps.ver.outputs.igdgmm }}
             ONEAPI_VERSION=${{ steps.ver.outputs.oneapi }}
             CUDA_VERSION=${{ steps.ver.outputs.cuda }}
             CUDA_ARCHITECTURES=${{ matrix.build.cuda_archs }}
