@@ -53,6 +53,7 @@ RUN git init -q && \
 RUN cd ui-svelte && npm ci && npm run build
 
 RUN GOOS=linux GOARCH=${TARGETARCH} go build \
+        -tags embed_ui \
         -ldflags="-X main.commit=$(git rev-parse --short HEAD) -X main.version=custom_$(git rev-parse --short HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         -o /src/llama-swap .
 
