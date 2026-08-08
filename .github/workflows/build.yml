@@ -249,7 +249,23 @@ jobs:
           if [ "$VARIANT" = "fork" ]; then
             TAG_SUFFIX="-fork"
             LS_TAG=$(echo "$LS_REF" | tr -c 'a-zA-Z0-9._-' '-')
+            # LS_REF is usually a floating branch name ("memory-budget"), and
+            # that same string is what gets baked into the go build layer's
+            # build-arg on every run. A build-arg whose value never changes is
+            # an unchanged cache key to BuildKit, so with cache-from: type=gha
+            # the "git fetch $LS_REF" layer just replays its first-ever
+            # result forever, never re-fetching new commits pushed to the
+            # branch. Resolve to the concrete commit up front and build from
+            # that instead, so a new commit on the branch actually busts the
+            # cache; fall back to the literal ref if it doesn't resolve (a
+            # pinned SHA input, which already busts cache correctly on its
+            # own when it changes).
+            RESOLVED_SHA=$(git ls-remote "$LS_REPO" "$LS_REF" | head -1 | cut -f1)
             SRC_DESC="llama-swap \`$LS_REPO@$LS_REF\`"
+            if [ -n "$RESOLVED_SHA" ]; then
+              SRC_DESC="$SRC_DESC ($RESOLVED_SHA)"
+              LS_REF="$RESOLVED_SHA"
+            fi
           else
             TAG_SUFFIX=""
             LS_TAG="$LS_VER"
