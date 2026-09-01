@@ -64,7 +64,11 @@ jobs:
           set -euo pipefail
 
           UPSTREAM=ggml-org/llama.cpp
-          LATEST=$(gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name)
+          # Hourly bXXXXX tags are pre-releases upstream, so /releases/latest
+          # would report the last stable vX.Y.Z and this watcher would never see
+          # drift. Take the newest non-draft release, pre-release included.
+          LATEST=$(gh api "repos/$UPSTREAM/releases?per_page=10" \
+                     --jq 'map(select(.draft | not)) | .[0].tag_name')
           echo "llamacpp_ref=$LATEST" >> "$GITHUB_OUTPUT"
           echo "Latest llama.cpp release: $LATEST"
 

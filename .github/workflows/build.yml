@@ -2,7 +2,8 @@ name: build
 
 # Builds llama-swap + llama.cpp from source and pushes to GHCR.
 #
-#   - Cron every day    -> rebuilds against the latest llama.cpp release.
+#   - Cron every day    -> rebuilds against the newest llama.cpp release
+#                          (including the hourly bXXXXX pre-releases).
 #   - Manual run        -> lets you pin a specific llama.cpp ref / llama-swap version.
 #   - Push to main      -> rebuilds when a Dockerfile or this workflow change.
 #   - workflow_call     -> watch-llamacpp.yml calls us reactively when upstream
@@ -53,7 +54,7 @@ on:
   workflow_dispatch:
     inputs:
       llamacpp_ref:
-        description: "llama.cpp git ref to build (tag like b9495, a commit sha, a branch, or 'latest' release)"
+        description: "llama.cpp git ref to build (tag like b9495, a commit sha, a branch, or 'latest' release incl. pre-releases)"
         default: "latest"
         required: false
       llama_swap_version:
@@ -121,7 +122,7 @@ on:
         default: "all"
         required: false
   schedule:
-    # Every day at 06:00 UTC — track the latest llama.cpp release.
+    # Every day at 06:00 UTC — track the newest llama.cpp release.
     - cron: "0 6 * * *"
   push:
     branches: [main]
@@ -228,7 +229,11 @@ jobs:
           set -euo pipefail
           REF="${{ inputs.llamacpp_ref || 'latest' }}"
           if [ "$REF" = "latest" ] || [ -z "$REF" ]; then
-            REF=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq .tag_name)
+            # llama.cpp publishes its hourly bXXXXX tags as *pre-releases* and
+            # only occasionally cuts a stable vX.Y.Z, so /releases/latest pins us
+            # to a weeks-old commit. Take the newest non-draft release instead.
+            REF=$(gh api 'repos/ggml-org/llama.cpp/releases?per_page=10' \
+                    --jq 'map(select(.draft | not)) | .[0].tag_name')
           fi
           LS_VER="${{ inputs.llama_swap_version || 'latest' }}"
           if [ "$LS_VER" = "latest" ] || [ -z "$LS_VER" ]; then
