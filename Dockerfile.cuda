@@ -69,6 +69,19 @@ ARG GGML_CPU_ARM_ARCH=""
 # .devops/cuda.Dockerfile pins the same version on both arches.
 ARG GCC_VERSION=14
 
+# nvcc -compress-mode for the device code in the fatbinary (CUDA >= 12.8).
+# ggml defaults this to "size", on the reasoning that the process is long-lived
+# so a slower one-time decompress is worth the smaller binary. llama-swap breaks
+# that assumption -- it restarts llama-server on every model swap -- so images
+# pinned to a single GPU arch use "speed" instead. Measured on our arch sets
+# (two representative TUs, CUDA 13.3.1):
+#   one real arch  : size 998K   balance 2.7M   speed 2.7M   none 2.7M
+#   all-arch fleet : size 3.0M   balance 9.5M   speed  11M   none  20M
+# At one arch "speed" is byte-identical to "none" -- nothing to decompress at
+# load, for a bounded cost. Across the full arch set it is 3.7x the payload, so
+# the generic images keep "size" and eat the decompress.
+ARG CUDA_COMPRESSION_MODE=size
+
 RUN apt-get update && \
     apt-get install -y git cmake libssl-dev wget ca-certificates build-essential \
         gcc-${GCC_VERSION} g++-${GCC_VERSION} && \
@@ -105,6 +118,7 @@ RUN ARCH_FLAG="" && \
         -DGGML_NATIVE=OFF \
         -DGGML_CUDA=ON \
         -DGGML_CUDA_FA_QUANTS=all \
+        -DGGML_CUDA_COMPRESSION_MODE=${CUDA_COMPRESSION_MODE} \
         -DGGML_BACKEND_DL=ON \
         -DLLAMA_BUILD_TESTS=OFF \
         ${ARCH_FLAG} \
