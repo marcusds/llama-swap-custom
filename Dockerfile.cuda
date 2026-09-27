@@ -76,10 +76,18 @@ RUN git init -q && \
 
 # Dynamic backends (BACKEND_DL) so the CUDA + all CPU variants are loadable
 # .so files alongside the binary, matching the upstream server image layout.
+#
+# LLAMA_BUILD_NUMBER: a --depth=1 clone makes `git rev-list --count HEAD` return
+# 1, so llama-server would report itself as build 1 and tools/ui would ask the
+# HF asset bucket for a nonexistent "b1" and silently fall back to whatever the
+# "latest" UI is. Recover the real number from a bXXXXX ref.
 RUN ARCH_FLAG="" && \
     [ -n "${CUDA_ARCHITECTURES}" ] && ARCH_FLAG="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}" ; \
     CPU_ARCH_FLAG="" && \
     [ -n "${GGML_CPU_ARM_ARCH}" ] && CPU_ARCH_FLAG="-DGGML_CPU_ARM_ARCH=${GGML_CPU_ARM_ARCH}" ; \
+    BUILD_NUM_FLAG="" && \
+    NUM="$(printf '%s' "${LLAMACPP_REF}" | sed -n 's/^b\([0-9]\{1,\}\)$/\1/p')" && \
+    [ -n "$NUM" ] && BUILD_NUM_FLAG="-DLLAMA_BUILD_NUMBER=$NUM" ; \
     cmake -B build \
         -DGGML_NATIVE=OFF \
         -DGGML_CUDA=ON \
@@ -87,7 +95,8 @@ RUN ARCH_FLAG="" && \
         -DGGML_BACKEND_DL=ON \
         -DLLAMA_BUILD_TESTS=OFF \
         ${ARCH_FLAG} \
-        ${CPU_ARCH_FLAG} && \
+        ${CPU_ARCH_FLAG} \
+        ${BUILD_NUM_FLAG} && \
     cmake --build build --config Release -j"$(nproc)"
 
 # Collect the binary + every shared lib it dlopens into one dir.

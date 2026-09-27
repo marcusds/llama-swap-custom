@@ -136,8 +136,17 @@ RUN git init -q && \
 # *warns* and builds on without oneDNN -- silently dropping the fused SDPA /
 # flash-attention path. Same for AOT. Assert both landed instead of shipping a
 # quietly slower image.
+#
+# LLAMA_BUILD_NUMBER: a --depth=1 clone makes `git rev-list --count HEAD` return
+# 1, so llama-server would report itself as build 1 and tools/ui would ask the
+# HF asset bucket for a nonexistent "b1" and silently fall back to whatever the
+# "latest" UI is. Recover the real number from a bXXXXX ref.
 RUN set -e; \
     OPT=(); \
+    NUM="$(printf '%s' "${LLAMACPP_REF}" | sed -n 's/^b\([0-9]\{1,\}\)$/\1/p')"; \
+    if [ -n "$NUM" ]; then \
+        OPT+=("-DLLAMA_BUILD_NUMBER=$NUM"); \
+    fi; \
     if [ "${GGML_SYCL_F16}" = "ON" ]; then \
         echo "GGML_SYCL_F16 is set"; OPT+=(-DGGML_SYCL_F16=ON); \
     fi; \
