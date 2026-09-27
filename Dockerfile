@@ -19,10 +19,12 @@
 #                  model swap -- at the cost of an image that only runs on that
 #                  GPU architecture.
 #   COMPUTE_RUNTIME_VERSION / IGC_VERSION / IGDGMM_VERSION
-#                  Intel GPU userspace stack. Defaults to the current NEO 26.18 /
-#                  IGC 2.34.4 set. MULTI-GPU hosts hit a known bug there
-#                  (ggml-org/llama.cpp#21747, intel/compute-runtime#921) and
-#                  should override back to the 25.40 set -- see below.
+#                  Intel GPU userspace stack. Defaults to NEO 26.31 / IGC 2.40.13,
+#                  ahead of upstream's 26.18 / 2.34.4 -- see the rationale on the
+#                  base stage. MULTI-GPU hosts hit a known bug in the
+#                  26.18-and-earlier line (ggml-org/llama.cpp#21747,
+#                  intel/compute-runtime#921) and can override back to the 25.40
+#                  set -- see below.
 
 ARG ONEAPI_VERSION=2025.3.3-0-devel-ubuntu24.04
 ARG LS_REPO=https://github.com/marcusds/llama-swap.git
@@ -100,10 +102,10 @@ RUN if [ -z "$(find /opt/intel -name dnnl-config.cmake -print -quit)" ]; then \
 # "gen compiler command failed" after only a -Waot-tool-not-found warning.
 # Install the same compute-runtime the final image uses, so the ISA we generate
 # matches the driver that will run it. JIT builds do not need ocloc.
-ARG IGC_VERSION=v2.38.2
-ARG IGC_VERSION_FULL=2_2.38.2+22051
-ARG COMPUTE_RUNTIME_VERSION=26.27.39122.11
-ARG COMPUTE_RUNTIME_VERSION_FULL=26.27.39122.11-0
+ARG IGC_VERSION=v2.40.13
+ARG IGC_VERSION_FULL=2_2.40.13+22418
+ARG COMPUTE_RUNTIME_VERSION=26.31.39395.13
+ARG COMPUTE_RUNTIME_VERSION_FULL=26.31.39395.13-0
 ARG IGDGMM_VERSION=22.10.0
 RUN if [ -n "${GGML_SYCL_DEVICE_ARCH}" ] && ! command -v ocloc >/dev/null; then \
         echo "AOT requested but ocloc missing -- installing compute-runtime ${COMPUTE_RUNTIME_VERSION}" && \
@@ -182,22 +184,29 @@ RUN mkdir -p /app/lib && \
 # ─────────────────────────────────────────────────────────────────────────
 FROM intel/deep-learning-essentials:${ONEAPI_VERSION} AS base
 
-# NEO 26.27 + its matching IGC 2.38.2 / gmmlib 22.10.0 (pairing per the NEO
-# 26.27 release notes). Newer than upstream's 26.18 default, and deliberately
-# so: the multi-GPU Level Zero context regression (intel/compute-runtime#921,
-# ggml-org/llama.cpp#21747) was only merged 2026-06-04, *after* 26.18 was cut
-# on 2026-05-12. 26.27 (2026-07-21) is the first stack here that should carry
-# the fix -- though Intel publishes no per-release issue mapping, so this is
-# inferred from dates, not confirmed by a maintainer statement.
+# NEO 26.31 + its matching IGC 2.40.13 / gmmlib 22.10.0 (pairing per the NEO
+# 26.31 release notes, which also pull in Level Zero 1.32.0). Newer than
+# upstream's 26.18 default, and deliberately so: this is the performance-
+# relevant half of the stack -- the IGC is what compiles our SPIR-V/AOT kernels
+# -- so the fleet tracks the current NEO rather than upstream's pin.
+#
+# It also clears the multi-GPU Level Zero context regression
+# (intel/compute-runtime#921, ggml-org/llama.cpp#21747), whose fix merged
+# 2026-06-04, *after* 26.18 was cut on 2026-05-12. Intel publishes no
+# per-release issue mapping, so that is inferred from dates, not confirmed by a
+# maintainer statement -- hence the legacy fallback below still exists.
+#
+# Do not mix: IGC 2.41.5 is newer still, but 26.31's notes pair it with 2.40.13
+# and an unvalidated IGC/NEO pairing is exactly how kernel miscompiles appear.
 #
 # If a multi-GPU host still misbehaves, fall back by overriding all five:
 #   IGC_VERSION=v2.20.5 IGC_VERSION_FULL=2_2.20.5+19972
 #   COMPUTE_RUNTIME_VERSION=25.40.35563.10
 #   COMPUTE_RUNTIME_VERSION_FULL=25.40.35563.10-0 IGDGMM_VERSION=22.8.2
-ARG IGC_VERSION=v2.38.2
-ARG IGC_VERSION_FULL=2_2.38.2+22051
-ARG COMPUTE_RUNTIME_VERSION=26.27.39122.11
-ARG COMPUTE_RUNTIME_VERSION_FULL=26.27.39122.11-0
+ARG IGC_VERSION=v2.40.13
+ARG IGC_VERSION_FULL=2_2.40.13+22418
+ARG COMPUTE_RUNTIME_VERSION=26.31.39395.13
+ARG COMPUTE_RUNTIME_VERSION_FULL=26.31.39395.13-0
 ARG IGDGMM_VERSION=22.10.0
 
 RUN mkdir /tmp/neo && cd /tmp/neo && \
