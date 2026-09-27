@@ -33,9 +33,9 @@ name: build
 #                                     B200/GB200) — a cubin built for one won't run natively on
 #                                     the other, only via PTX-JIT with none of the arch-specific
 #                                     codegen. Also pins the CPU backend to armv9.2-a+sve2+i8mm+
-#                                     dotprod+fp16 (Grace's Cortex-X925/A725) since arm64 gets no
-#                                     runtime multi-variant dispatch from GGML_BACKEND_DL the way
-#                                     x86 does.
+#                                     dotprod+fp16 (Grace's Cortex-X925/A725) instead of the
+#                                     GGML_CPU_ALL_VARIANTS set every other image ships: one .so
+#                                     built straight for Grace, no runtime variant probe.
 #   - llama-swap-cuda13-rtx50       NVIDIA CUDA 13.3 (amd64, SM 12.0 only — GeForce RTX 50
 #                                     series / 5090). SM 12.0, not 12.1: same consumer-Blackwell
 #                                     generation as GB10 but a distinct compute capability

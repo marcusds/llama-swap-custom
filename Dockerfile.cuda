@@ -52,18 +52,29 @@ ARG LLAMACPP_REF=master
 # any arch-specific codegen and pays a JIT-compile cost at first kernel use.
 ARG CUDA_ARCHITECTURES=""
 
-# Leave empty for the portable baseline arm64 CPU build. Set to e.g.
-# "armv9.2-a+sve2+i8mm+dotprod+fp16" to compile the CPU backend for a specific
-# core (DGX Spark's Grace CPU: Cortex-X925/A725, both Armv9.2-A with SVE2).
-# GGML_BACKEND_DL's multi-variant runtime dispatch (GGML_CPU_ALL_VARIANTS)
-# only covers x86 -- on arm64 it produces a single generic libggml-cpu.so with
-# none of these extensions, so this is the only way to get them on this arch.
+# Leave empty to build the full GGML_CPU_ALL_VARIANTS set (one libggml-cpu-*.so
+# per feature level, picked at runtime). Upstream's cmake covers arm64 on Linux
+# too -- armv8.0 through armv9.2+SME -- not just x86, so the default is already
+# a tuned build on both arches.
+# Set this to e.g. "armv9.2-a+sve2+i8mm+dotprod+fp16" to instead compile one CPU
+# backend hard-wired to a specific core (DGX Spark's Grace CPU: Cortex-X925/A725,
+# both Armv9.2-A with SVE2). cmake rejects setting this together with
+# GGML_CPU_ALL_VARIANTS, so it is one or the other.
 # Only use this on an image scoped to one known CPU; it won't run elsewhere.
 ARG GGML_CPU_ARM_ARCH=""
 
+# Host compiler for the CPU backends and for nvcc. Ubuntu 24.04 ships GCC 13,
+# which does not know the 'sme' -march feature the armv9.2 CPU variants use, so
+# GGML_CPU_ALL_VARIANTS fails to configure on arm64 without this. Upstream's
+# .devops/cuda.Dockerfile pins the same version on both arches.
+ARG GCC_VERSION=14
+
 RUN apt-get update && \
-    apt-get install -y git cmake libssl-dev wget ca-certificates build-essential && \
+    apt-get install -y git cmake libssl-dev wget ca-certificates build-essential \
+        gcc-${GCC_VERSION} g++-${GCC_VERSION} && \
     rm -rf /var/lib/apt/lists/*
+
+ENV CC=gcc-${GCC_VERSION} CXX=g++-${GCC_VERSION} CUDAHOSTCXX=g++-${GCC_VERSION}
 
 WORKDIR /app
 
@@ -83,7 +94,7 @@ RUN git init -q && \
 # "latest" UI is. Recover the real number from a bXXXXX ref.
 RUN ARCH_FLAG="" && \
     [ -n "${CUDA_ARCHITECTURES}" ] && ARCH_FLAG="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}" ; \
-    CPU_ARCH_FLAG="" && \
+    CPU_ARCH_FLAG="-DGGML_CPU_ALL_VARIANTS=ON" && \
     [ -n "${GGML_CPU_ARM_ARCH}" ] && CPU_ARCH_FLAG="-DGGML_CPU_ARM_ARCH=${GGML_CPU_ARM_ARCH}" ; \
     BUILD_NUM_FLAG="" && \
     NUM="$(printf '%s' "${LLAMACPP_REF}" | sed -n 's/^b\([0-9]\{1,\}\)$/\1/p')" && \
