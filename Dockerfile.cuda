@@ -4,9 +4,9 @@
 #   LLAMACPP_REF   git ref to build (tag like b9495, a commit sha, or a branch)
 #   LS_REPO        llama-swap git repo to build from
 #   LS_REF         llama-swap git ref to build (branch, tag, or sha)
-#   CUDA_VERSION   NVIDIA CUDA base image tag (e.g. 13.3.0)
+#   CUDA_VERSION   NVIDIA CUDA base image tag (e.g. 13.4.1)
 
-ARG CUDA_VERSION=13.3.0
+ARG CUDA_VERSION=13.4.1
 ARG LS_REPO=https://github.com/marcusds/llama-swap.git
 ARG LS_REF=memory-budget
 
@@ -157,7 +157,7 @@ ARG TARGETARCH=amd64
 ARG LS_VER=222
 ARG LLAMACPP_REF=master
 ARG BUILD_DATE=N/A
-ARG CUDA_VERSION=13.3.0
+ARG CUDA_VERSION=13.4.1
 
 LABEL org.opencontainers.image.title="llama-swap-cuda" \
       org.opencontainers.image.description="llama-swap + llama.cpp (NVIDIA CUDA) built from source" \
@@ -201,7 +201,7 @@ ARG LS_REPO=https://github.com/marcusds/llama-swap.git
 ARG LS_REF=memory-budget
 ARG LLAMACPP_REF=master
 ARG BUILD_DATE=N/A
-ARG CUDA_VERSION=13.3.0
+ARG CUDA_VERSION=13.4.1
 
 LABEL org.opencontainers.image.title="llama-swap-cuda" \
       org.opencontainers.image.description="llama-swap + llama.cpp (NVIDIA CUDA) built from source" \

@@ -25,9 +25,9 @@ name: build
 #                               two dGPUs.
 #
 # All other images use IGC 2.40.13 / NEO 26.31.
-#   - llama-swap-cuda13         NVIDIA CUDA 13.3 (amd64, all GPU architectures)
-#   - llama-swap-cuda13-arm64   NVIDIA CUDA 13.3 (arm64, all GPU architectures)
-#   - llama-swap-cuda13-spark-arm64  NVIDIA CUDA 13.3 (arm64, SM 12.1 only — DGX Spark GB10).
+#   - llama-swap-cuda13         NVIDIA CUDA 13.4 (amd64, all GPU architectures)
+#   - llama-swap-cuda13-arm64   NVIDIA CUDA 13.4 (arm64, all GPU architectures)
+#   - llama-swap-cuda13-spark-arm64  NVIDIA CUDA 13.4 (arm64, SM 12.1 only — DGX Spark GB10).
 #                                     Not "blackwell": SM 12.1 (GB10, consumer/edge) is a
 #                                     different family from datacenter Blackwell (SM 10.0/10.3,
 #                                     B200/GB200) — a cubin built for one won't run natively on
@@ -39,7 +39,7 @@ name: build
 #                                     Single-arch, so it builds with nvcc
 #                                     -compress-mode=speed (no fatbin compression
 #                                     at all) to drop decompress from every swap.
-#   - llama-swap-cuda13-rtx50       NVIDIA CUDA 13.3 (amd64, SM 12.0 only — GeForce RTX 50
+#   - llama-swap-cuda13-rtx50       NVIDIA CUDA 13.4 (amd64, SM 12.0 only — GeForce RTX 50
 #                                     series / 5090). SM 12.0, not 12.1: same consumer-Blackwell
 #                                     generation as GB10 but a distinct compute capability
 #                                     (desktop vs. integrated), so it gets its own cubin rather
@@ -167,10 +167,10 @@ jobs:
               {"image":"llama-swap-sycl-2026",    "oneapi":"2026.1.2-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
               {"image":"llama-swap-sycl-bmg",     "oneapi":"2026.1.2-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","sycl_arch":"bmg_g21"},
               {"image":"llama-swap-sycl-multigpu","oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","neo":"legacy"},
-              {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.3.1","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
-              {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.3.1","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
-              {"image":"llama-swap-cuda13-spark-arm64","oneapi":"","cuda":"13.3.1","cuda_archs":"121","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64","cpu_arch":"armv9.2-a+sve2+i8mm+dotprod+fp16","compress":"speed"},
-              {"image":"llama-swap-cuda13-rtx50",      "oneapi":"","cuda":"13.3.1","cuda_archs":"120","dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","compress":"speed"}
+              {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.4.1","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
+              {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.4.1","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},
+              {"image":"llama-swap-cuda13-spark-arm64","oneapi":"","cuda":"13.4.1","cuda_archs":"121","dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64","cpu_arch":"armv9.2-a+sve2+i8mm+dotprod+fp16","compress":"speed"},
+              {"image":"llama-swap-cuda13-rtx50",      "oneapi":"","cuda":"13.4.1","cuda_archs":"120","dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","compress":"speed"}
             ]'
             # image_filter narrows the fleet to the images whose name contains one
             # of the given substrings, so a reactive "sycl" trigger builds the four
