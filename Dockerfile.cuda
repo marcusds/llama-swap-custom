@@ -32,7 +32,7 @@ RUN git init -q && \
     git checkout -q FETCH_HEAD && \
     git rev-parse HEAD > /src/LLAMASWAP_GIT_SHA
 
-RUN cd ui-svelte && npm ci && npm run build
+RUN if [ -d ui ]; then cd ui; else cd ui-svelte; fi && npm ci && npm run build
 
 RUN GOOS=linux GOARCH=${TARGETARCH} go build \
         -tags embed_ui \
