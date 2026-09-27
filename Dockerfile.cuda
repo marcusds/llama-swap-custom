@@ -87,6 +87,8 @@ RUN git init -q && \
 
 # Dynamic backends (BACKEND_DL) so the CUDA + all CPU variants are loadable
 # .so files alongside the binary, matching the upstream server image layout.
+# GGML_CUDA_FA_QUANTS=all replaces the deprecated GGML_CUDA_FA_ALL_QUANTS=ON;
+# it needs llama.cpp >= 2026-09-09 (b10700-ish), which the fleet always is.
 #
 # LLAMA_BUILD_NUMBER: a --depth=1 clone makes `git rev-list --count HEAD` return
 # 1, so llama-server would report itself as build 1 and tools/ui would ask the
@@ -102,7 +104,7 @@ RUN ARCH_FLAG="" && \
     cmake -B build \
         -DGGML_NATIVE=OFF \
         -DGGML_CUDA=ON \
-        -DGGML_CUDA_FA_ALL_QUANTS=ON \
+        -DGGML_CUDA_FA_QUANTS=all \
         -DGGML_BACKEND_DL=ON \
         -DLLAMA_BUILD_TESTS=OFF \
         ${ARCH_FLAG} \
