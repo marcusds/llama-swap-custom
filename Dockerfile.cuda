@@ -13,7 +13,7 @@ ARG LS_REF=memory-budget
 # ─────────────────────────────────────────────────────────────────────────
 # Build stage: build llama-swap from source (our fork/branch, not a release)
 # ─────────────────────────────────────────────────────────────────────────
-FROM golang:1.26-bookworm AS ls-build
+FROM golang:1.27-bookworm AS ls-build
 
 ARG LS_REPO
 ARG LS_REF
