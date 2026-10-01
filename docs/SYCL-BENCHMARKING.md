@@ -13,7 +13,7 @@ Hardware: Intel Arc Pro B50 (Battlemage, BMG-G21), 16304 MiB VRAM, 70 W cap.
 | what it is | oneAPI 2026.1.2, AOT-compiled for `bmg_g21`, oneDNN restored, NEO 26.27 / IGC 2.38.2 |
 | compose | `/home/marcus/containers/llama.cpp/compose.yaml` |
 | model config | `/home/marcus/containers/llama.cpp/config/config.yaml` |
-| rollback (image) | `compose.yaml.bak-20260801-043653` → `-2026:latest` |
+| rollback (image) | `compose.yaml.bak-20260801-043653` → `llama-swap-sycl:latest` (same oneAPI/NEO as `-bmg`, JIT instead of AOT; `-2026` was deleted 2026-10-01) |
 | rollback (config) | `config/config.yaml.bak-20260801-045730` |
 
 7 models on an f16 KV cache carry `env: ["GGML_SYCL_ENABLE_MKL_FA=0"]`.
