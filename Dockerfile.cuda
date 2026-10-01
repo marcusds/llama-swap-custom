@@ -4,9 +4,9 @@
 #   LLAMACPP_REF   git ref to build (tag like b9495, a commit sha, or a branch)
 #   LS_REPO        llama-swap git repo to build from
 #   LS_REF         llama-swap git ref to build (branch, tag, or sha)
-#   CUDA_VERSION   NVIDIA CUDA base image tag (e.g. 13.4.1)
+#   CUDA_VERSION   NVIDIA CUDA base image tag (e.g. 13.4.2)
 
-ARG CUDA_VERSION=13.4.1
+ARG CUDA_VERSION=13.4.2
 ARG LS_REPO=https://github.com/marcusds/llama-swap.git
 ARG LS_REF=memory-budget
 
@@ -81,7 +81,6 @@ ARG GCC_VERSION=14
 # load, for a bounded cost. Across the full arch set it is 3.7x the payload, so
 # the generic images keep "size" and eat the decompress.
 ARG CUDA_COMPRESSION_MODE=size
-ARG CCCL_VERSION=v3.4.3
 
 RUN apt-get update && \
     apt-get install -y git cmake libssl-dev wget ca-certificates build-essential \
@@ -104,10 +103,9 @@ RUN git init -q && \
 # GGML_CUDA_FA_QUANTS=all replaces the deprecated GGML_CUDA_FA_ALL_QUANTS=ON;
 # it needs llama.cpp >= 2026-09-09 (b10700-ish), which the fleet always is.
 #
-# GGML_CUDA_CCCL_VERSION fetches CCCL from GitHub instead of using the CTK's.
-# CUB DeviceTopK is only enabled on CCCL >= 3.4.3 (race fixed in NVIDIA/cccl#10627);
-# CTK 13.4.1 bundles 3.4.2, so without this top-k drops to the sort fallback.
-# Drop it once on CTK >= 13.5, which bundles CCCL >= 3.5.
+# CUB DeviceTopK needs CCCL >= 3.4.3 (race fixed in NVIDIA/cccl#10627), else
+# top-k drops to the sort fallback. CTK 13.4.2 bundles exactly 3.4.3; on an
+# older CTK add -DGGML_CUDA_CCCL_VERSION=v3.4.3 to fetch it from GitHub.
 #
 # LLAMA_BUILD_NUMBER: a --depth=1 clone makes `git rev-list --count HEAD` return
 # 1, so llama-server would report itself as build 1 and tools/ui would ask the
@@ -124,7 +122,6 @@ RUN ARCH_FLAG="" && \
         -DGGML_NATIVE=OFF \
         -DGGML_CUDA=ON \
         -DGGML_CUDA_FA_QUANTS=all \
-        -DGGML_CUDA_CCCL_VERSION=${CCCL_VERSION} \
         -DGGML_CUDA_COMPRESSION_MODE=${CUDA_COMPRESSION_MODE} \
         -DGGML_BACKEND_DL=ON \
         -DLLAMA_BUILD_TESTS=OFF \
@@ -164,7 +161,7 @@ ARG TARGETARCH=amd64
 ARG LS_VER=222
 ARG LLAMACPP_REF=master
 ARG BUILD_DATE=N/A
-ARG CUDA_VERSION=13.4.1
+ARG CUDA_VERSION=13.4.2
 
 LABEL org.opencontainers.image.title="llama-swap-cuda" \
       org.opencontainers.image.description="llama-swap + llama.cpp (NVIDIA CUDA) built from source" \
@@ -208,7 +205,7 @@ ARG LS_REPO=https://github.com/marcusds/llama-swap.git
 ARG LS_REF=memory-budget
 ARG LLAMACPP_REF=master
 ARG BUILD_DATE=N/A
-ARG CUDA_VERSION=13.4.1
+ARG CUDA_VERSION=13.4.2
 
 LABEL org.opencontainers.image.title="llama-swap-cuda" \
       org.opencontainers.image.description="llama-swap + llama.cpp (NVIDIA CUDA) built from source" \
