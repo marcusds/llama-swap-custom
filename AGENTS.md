@@ -13,6 +13,8 @@ and bump anything stale. Upstream llama.cpp lags; this fleet does not.
 | Level Zero | `Dockerfile` `LEVEL_ZERO_VERSION` | `oneapi-src/level-zero` releases (`libze1`/`libze-dev` `+u24.04` debs) |
 | Go | `golang:X-bookworm` in both Dockerfiles | Docker Hub `golang` |
 | Node | `setup_XX.x` in both Dockerfiles | current Node LTS |
+| llama-swap (local default) | `ARG LS_VER` in both Dockerfiles | `mostlygeek/llama-swap` latest release (CI resolves this itself) |
+| GitHub Actions | `uses:` in `.github/workflows/*.yml` | each action's latest major; read its breaking-change notes |
 
 Rules:
 

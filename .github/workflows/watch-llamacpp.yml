@@ -48,7 +48,7 @@ jobs:
       llamacpp_ref: ${{ steps.detect.outputs.llamacpp_ref }}
     steps:
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
