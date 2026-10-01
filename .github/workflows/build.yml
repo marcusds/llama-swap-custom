@@ -24,7 +24,7 @@ name: build
 #                               known-good fallback until someone confirms on
 #                               two dGPUs.
 #
-# All other images use IGC 2.40.13 / NEO 26.31.
+# All other images use IGC 2.41.5 / NEO 26.35.
 #   - llama-swap-cuda13         NVIDIA CUDA 13.4 (amd64, all GPU architectures)
 #   - llama-swap-cuda13-arm64   NVIDIA CUDA 13.4 (arm64, all GPU architectures)
 #   - llama-swap-cuda13-spark-arm64  NVIDIA CUDA 13.4 (arm64, SM 12.1 only — DGX Spark GB10).
@@ -292,10 +292,10 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           else
             {
-              echo "igc=v2.40.13"
-              echo "igc_full=2_2.40.13+22418"
-              echo "neo=26.31.39395.13"
-              echo "neo_full=26.31.39395.13-0"
+              echo "igc=v2.41.5"
+              echo "igc_full=2_2.41.5+22716"
+              echo "neo=26.35.39758.10"
+              echo "neo_full=26.35.39758.10-0"
               echo "igdgmm=22.10.0"
             } >> "$GITHUB_OUTPUT"
           fi

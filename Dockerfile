@@ -19,7 +19,7 @@
 #                  model swap -- at the cost of an image that only runs on that
 #                  GPU architecture.
 #   COMPUTE_RUNTIME_VERSION / IGC_VERSION / IGDGMM_VERSION
-#                  Intel GPU userspace stack. Defaults to NEO 26.31 / IGC 2.40.13,
+#                  Intel GPU userspace stack. Defaults to NEO 26.35 / IGC 2.41.5,
 #                  ahead of upstream's 26.18 / 2.34.4 -- see the rationale on the
 #                  base stage. MULTI-GPU hosts hit a known bug in the
 #                  26.18-and-earlier line (ggml-org/llama.cpp#21747,
@@ -41,7 +41,7 @@ ARG TARGETARCH=amd64
 
 RUN apt-get update && \
     apt-get install -y git curl ca-certificates && \
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
@@ -67,7 +67,8 @@ FROM intel/deep-learning-essentials:${ONEAPI_VERSION} AS build
 ARG LLAMACPP_REF=master
 ARG GGML_SYCL_F16=ON
 ARG GGML_SYCL_DEVICE_ARCH=""
-ARG LEVEL_ZERO_VERSION=1.28.2
+# Level Zero >= 1.29 renamed its debs level-zero/level-zero-devel -> libze1/libze-dev.
+ARG LEVEL_ZERO_VERSION=1.34.0
 ARG LEVEL_ZERO_UBUNTU_VERSION=u24.04
 
 # bash (not dash) so `set -o pipefail` works: the cmake output below is piped
@@ -77,8 +78,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && \
     apt-get install -y git libssl-dev wget ca-certificates && \
     cd /tmp && \
-    wget -q "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/level-zero_${LEVEL_ZERO_VERSION}%2B${LEVEL_ZERO_UBUNTU_VERSION}_amd64.deb" -O level-zero.deb && \
-    wget -q "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/level-zero-devel_${LEVEL_ZERO_VERSION}%2B${LEVEL_ZERO_UBUNTU_VERSION}_amd64.deb" -O level-zero-devel.deb && \
+    wget -q "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2B${LEVEL_ZERO_UBUNTU_VERSION}_amd64.deb" -O level-zero.deb && \
+    wget -q "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2B${LEVEL_ZERO_UBUNTU_VERSION}_amd64.deb" -O level-zero-devel.deb && \
     apt-get -o Dpkg::Options::="--force-overwrite" install -y ./level-zero.deb ./level-zero-devel.deb && \
     rm -f /tmp/level-zero.deb /tmp/level-zero-devel.deb
 
@@ -102,10 +103,10 @@ RUN if [ -z "$(find /opt/intel -name dnnl-config.cmake -print -quit)" ]; then \
 # "gen compiler command failed" after only a -Waot-tool-not-found warning.
 # Install the same compute-runtime the final image uses, so the ISA we generate
 # matches the driver that will run it. JIT builds do not need ocloc.
-ARG IGC_VERSION=v2.40.13
-ARG IGC_VERSION_FULL=2_2.40.13+22418
-ARG COMPUTE_RUNTIME_VERSION=26.31.39395.13
-ARG COMPUTE_RUNTIME_VERSION_FULL=26.31.39395.13-0
+ARG IGC_VERSION=v2.41.5
+ARG IGC_VERSION_FULL=2_2.41.5+22716
+ARG COMPUTE_RUNTIME_VERSION=26.35.39758.10
+ARG COMPUTE_RUNTIME_VERSION_FULL=26.35.39758.10-0
 ARG IGDGMM_VERSION=22.10.0
 RUN if [ -n "${GGML_SYCL_DEVICE_ARCH}" ] && ! command -v ocloc >/dev/null; then \
         echo "AOT requested but ocloc missing -- installing compute-runtime ${COMPUTE_RUNTIME_VERSION}" && \
@@ -193,8 +194,8 @@ RUN mkdir -p /app/lib && \
 # ─────────────────────────────────────────────────────────────────────────
 FROM intel/deep-learning-essentials:${ONEAPI_VERSION} AS base
 
-# NEO 26.31 + its matching IGC 2.40.13 / gmmlib 22.10.0 (pairing per the NEO
-# 26.31 release notes, which also pull in Level Zero 1.32.0). Newer than
+# NEO 26.35 + its matching IGC 2.41.5 / gmmlib 22.10.0 (pairing per the NEO
+# 26.35 release notes, which also pull in Level Zero 1.32.0). Newer than
 # upstream's 26.18 default, and deliberately so: this is the performance-
 # relevant half of the stack -- the IGC is what compiles our SPIR-V/AOT kernels
 # -- so the fleet tracks the current NEO rather than upstream's pin.
@@ -205,17 +206,17 @@ FROM intel/deep-learning-essentials:${ONEAPI_VERSION} AS base
 # per-release issue mapping, so that is inferred from dates, not confirmed by a
 # maintainer statement -- hence the legacy fallback below still exists.
 #
-# Do not mix: IGC 2.41.5 is newer still, but 26.31's notes pair it with 2.40.13
-# and an unvalidated IGC/NEO pairing is exactly how kernel miscompiles appear.
+# Do not mix: always take the IGC that the NEO release notes pair with. An
+# unvalidated IGC/NEO pairing is exactly how kernel miscompiles appear.
 #
 # If a multi-GPU host still misbehaves, fall back by overriding all five:
 #   IGC_VERSION=v2.20.5 IGC_VERSION_FULL=2_2.20.5+19972
 #   COMPUTE_RUNTIME_VERSION=25.40.35563.10
 #   COMPUTE_RUNTIME_VERSION_FULL=25.40.35563.10-0 IGDGMM_VERSION=22.8.2
-ARG IGC_VERSION=v2.40.13
-ARG IGC_VERSION_FULL=2_2.40.13+22418
-ARG COMPUTE_RUNTIME_VERSION=26.31.39395.13
-ARG COMPUTE_RUNTIME_VERSION_FULL=26.31.39395.13-0
+ARG IGC_VERSION=v2.41.5
+ARG IGC_VERSION_FULL=2_2.41.5+22716
+ARG COMPUTE_RUNTIME_VERSION=26.35.39758.10
+ARG COMPUTE_RUNTIME_VERSION_FULL=26.35.39758.10-0
 ARG IGDGMM_VERSION=22.10.0
 
 RUN mkdir /tmp/neo && cd /tmp/neo && \
