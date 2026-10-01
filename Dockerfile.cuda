@@ -81,6 +81,7 @@ ARG GCC_VERSION=14
 # load, for a bounded cost. Across the full arch set it is 3.7x the payload, so
 # the generic images keep "size" and eat the decompress.
 ARG CUDA_COMPRESSION_MODE=size
+ARG CCCL_VERSION=v3.4.3
 
 RUN apt-get update && \
     apt-get install -y git cmake libssl-dev wget ca-certificates build-essential \
@@ -103,6 +104,11 @@ RUN git init -q && \
 # GGML_CUDA_FA_QUANTS=all replaces the deprecated GGML_CUDA_FA_ALL_QUANTS=ON;
 # it needs llama.cpp >= 2026-09-09 (b10700-ish), which the fleet always is.
 #
+# GGML_CUDA_CCCL_VERSION fetches CCCL from GitHub instead of using the CTK's.
+# CUB DeviceTopK is only enabled on CCCL >= 3.4.3 (race fixed in NVIDIA/cccl#10627);
+# CTK 13.4.1 bundles 3.4.2, so without this top-k drops to the sort fallback.
+# Drop it once on CTK >= 13.5, which bundles CCCL >= 3.5.
+#
 # LLAMA_BUILD_NUMBER: a --depth=1 clone makes `git rev-list --count HEAD` return
 # 1, so llama-server would report itself as build 1 and tools/ui would ask the
 # HF asset bucket for a nonexistent "b1" and silently fall back to whatever the
@@ -118,6 +124,7 @@ RUN ARCH_FLAG="" && \
         -DGGML_NATIVE=OFF \
         -DGGML_CUDA=ON \
         -DGGML_CUDA_FA_QUANTS=all \
+        -DGGML_CUDA_CCCL_VERSION=${CCCL_VERSION} \
         -DGGML_CUDA_COMPRESSION_MODE=${CUDA_COMPRESSION_MODE} \
         -DGGML_BACKEND_DL=ON \
         -DLLAMA_BUILD_TESTS=OFF \
