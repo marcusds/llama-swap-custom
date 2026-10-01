@@ -10,13 +10,13 @@ name: build
 #                          lands a commit in a backend we ship (see image_filter).
 #
 # Every trigger builds the standard image fleet (unless image_filter narrows it):
-#   - llama-swap-sycl           Intel SYCL on oneAPI 2025.3.3 (upstream's last SYCL-validated)
-#   - llama-swap-sycl-2026      Intel SYCL on oneAPI 2026.1.2 (latest)
-#   - llama-swap-sycl-bmg       oneAPI 2026.1.2, AOT-compiled for Battlemage
+#   - llama-swap-sycl           Intel SYCL on oneAPI 2026.1.4 (upstream validates 2026.1
+#                               since ggml-org/llama.cpp#29273)
+#   - llama-swap-sycl-bmg       oneAPI 2026.1.4, AOT-compiled for Battlemage
 #                               (bmg_g21: Arc B580/B570, Arc Pro B50/B60). No
 #                               SPIR-V JIT at llama-server start -- measured
 #                               4s to ready vs 53s -- but runs ONLY on Battlemage.
-#   - llama-swap-sycl-multigpu  Same as llama-swap-sycl but pinned to the older
+#   - llama-swap-sycl-multigpu  oneAPI 2025.3.3 pinned to the older
 #                               IGC 2.20.5 / NEO 25.40 stack. An escape hatch for
 #                               multi-GPU hosts: the 26.2x+ line *should* contain
 #                               the multi-GPU fix (merged after 26.18 was cut), but
@@ -80,7 +80,7 @@ on:
         default: "ON"
       oneapi_version:
         description: "oneAPI base image tag — ONLY used for a custom image_name one-off; the standard fleet pins its own per image"
-        default: "2026.1.2-devel-ubuntu24.04"
+        default: "2026.1.4-devel-ubuntu24.04"
         required: false
       image_name:
         description: "Set a non-default name (e.g. llama-swap-sycl-next) to do a single experimental build instead of the standard fleet"
@@ -115,7 +115,7 @@ on:
         required: false
       oneapi_version:
         type: string
-        default: "2026.1.2-devel-ubuntu24.04"
+        default: "2026.1.4-devel-ubuntu24.04"
         required: false
       image_name:
         type: string
@@ -158,14 +158,13 @@ jobs:
             # One-off experimental SYCL build to a custom package (upstream variant only).
             builds=$(jq -cn \
               --arg img "$IMG" \
-              --arg oa "${ONEAPI:-2026.1.2-devel-ubuntu24.04}" \
+              --arg oa "${ONEAPI:-2026.1.4-devel-ubuntu24.04}" \
               '[{image:$img, variant:"upstream", target:"server", oneapi:$oa, cuda:"", cuda_archs:"", dockerfile:"Dockerfile", runner:"ubuntu-latest", platform:"linux/amd64", targetarch:"amd64"}]')
           else
             # Standard fleet.
             fleet='[
-              {"image":"llama-swap-sycl",        "oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
-              {"image":"llama-swap-sycl-2026",    "oneapi":"2026.1.2-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
-              {"image":"llama-swap-sycl-bmg",     "oneapi":"2026.1.2-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","sycl_arch":"bmg_g21"},
+              {"image":"llama-swap-sycl",        "oneapi":"2026.1.4-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
+              {"image":"llama-swap-sycl-bmg",     "oneapi":"2026.1.4-devel-ubuntu24.04",  "cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","sycl_arch":"bmg_g21"},
               {"image":"llama-swap-sycl-multigpu","oneapi":"2025.3.3-0-devel-ubuntu24.04","cuda":"",     "cuda_archs":"",   "dockerfile":"Dockerfile",      "runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64","neo":"legacy"},
               {"image":"llama-swap-cuda13",       "oneapi":"",                             "cuda":"13.4.1","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-latest",    "platform":"linux/amd64","targetarch":"amd64"},
               {"image":"llama-swap-cuda13-arm64", "oneapi":"",                             "cuda":"13.4.1","cuda_archs":"",  "dockerfile":"Dockerfile.cuda","runner":"ubuntu-24.04-arm","platform":"linux/arm64","targetarch":"arm64"},

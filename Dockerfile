@@ -26,7 +26,7 @@
 #                  intel/compute-runtime#921) and can override back to the 25.40
 #                  set -- see below.
 
-ARG ONEAPI_VERSION=2025.3.3-0-devel-ubuntu24.04
+ARG ONEAPI_VERSION=2026.1.4-devel-ubuntu24.04
 ARG LS_REPO=https://github.com/marcusds/llama-swap.git
 ARG LS_REF=memory-budget
 

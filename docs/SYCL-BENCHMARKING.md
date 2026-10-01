@@ -232,7 +232,8 @@ they are no-ops on 2025.3.3.
   remove their `GGML_SYCL_ENABLE_MKL_FA=0`** — quantized KV needs MKL on.
 - `orpheus-tts` got `MKL_FA=0` by pattern, not measurement. It is short-context,
   so `n_kv` rarely reaches the 1024 gate; near-inert either way.
-- `llama-swap-sycl-2026` and `llama-swap-sycl-bmg` now share a base and differ
-  only by AOT. Dropping `-2026` would cut ~25 min per nightly.
+- `-2026` has been dropped: `llama-swap-sycl` moved to oneAPI 2026.1.4 once
+  upstream validated 2026.1, so the two were identical. It now shares a base
+  with `llama-swap-sycl-bmg` and differs only by AOT.
 - Numbers are Battlemage-only. Which of two *eligible* kernels is faster is a
   hardware property; the eligibility gates are not.
