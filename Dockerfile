@@ -6,6 +6,7 @@
 # replacement for ghcr.io/mostlygeek/llama-swap:intel that *we* control.
 #
 # Build args of interest:
+#   LLAMACPP_REPO  llama.cpp git repo to build from (default: upstream ggml-org)
 #   LLAMACPP_REF   git ref to build (tag like b9495, a commit sha, or a branch)
 #   LS_REPO        llama-swap git repo to build from
 #   LS_REF         llama-swap git ref to build (branch, tag, or sha)
@@ -64,6 +65,7 @@ RUN GOOS=linux GOARCH=${TARGETARCH} go build \
 # ─────────────────────────────────────────────────────────────────────────
 FROM intel/deep-learning-essentials:${ONEAPI_VERSION} AS build
 
+ARG LLAMACPP_REPO=https://github.com/ggml-org/llama.cpp.git
 ARG LLAMACPP_REF=master
 ARG GGML_SYCL_F16=ON
 ARG GGML_SYCL_DEVICE_ARCH=""
@@ -126,7 +128,7 @@ WORKDIR /app
 
 # Shallow-clone exactly the requested ref (tag / branch / sha).
 RUN git init -q && \
-    git remote add origin https://github.com/ggml-org/llama.cpp.git && \
+    git remote add origin "${LLAMACPP_REPO}" && \
     git fetch --depth=1 origin "${LLAMACPP_REF}" && \
     git checkout -q FETCH_HEAD && \
     git rev-parse HEAD > /app/LLAMACPP_GIT_SHA
