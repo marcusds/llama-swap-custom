@@ -27,7 +27,7 @@
 #                  intel/compute-runtime#921) and can override back to the 25.40
 #                  set -- see below.
 
-ARG ONEAPI_VERSION=2026.2.0-devel-ubuntu24.04
+ARG ONEAPI_VERSION=2026.2.0-devel-ubuntu26.04
 ARG LS_REPO=https://github.com/marcusds/llama-swap.git
 ARG LS_REF=memory-budget
 
@@ -71,6 +71,8 @@ ARG GGML_SYCL_F16=ON
 ARG GGML_SYCL_DEVICE_ARCH=""
 # Level Zero >= 1.29 renamed its debs level-zero/level-zero-devel -> libze1/libze-dev.
 ARG LEVEL_ZERO_VERSION=1.36.0
+# Level Zero publishes no u26.04 debs; the u24.04 ones install cleanly on 26.04
+# (verified by a full image build). Switch when a u26.04 build appears.
 ARG LEVEL_ZERO_UBUNTU_VERSION=u24.04
 
 # bash (not dash) so `set -o pipefail` works: the cmake output below is piped

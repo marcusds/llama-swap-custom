@@ -42,7 +42,7 @@ RUN GOOS=linux GOARCH=${TARGETARCH} go build \
 # ─────────────────────────────────────────────────────────────────────────
 # Build stage: compile llama.cpp for CUDA from source
 # ─────────────────────────────────────────────────────────────────────────
-FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu26.04 AS build
 
 ARG LLAMACPP_REF=master
 # Leave empty to let cmake auto-detect all supported architectures.
@@ -63,7 +63,7 @@ ARG CUDA_ARCHITECTURES=""
 # Only use this on an image scoped to one known CPU; it won't run elsewhere.
 ARG GGML_CPU_ARM_ARCH=""
 
-# Host compiler for the CPU backends and for nvcc. Ubuntu 24.04 ships GCC 13,
+# Host compiler for the CPU backends and for nvcc. Ubuntu 24.04 shipped GCC 13,
 # which does not know the 'sme' -march feature the armv9.2 CPU variants use, so
 # GGML_CPU_ALL_VARIANTS fails to configure on arm64 without this. Upstream's
 # .devops/cuda.Dockerfile pins the same version on both arches.
@@ -142,7 +142,7 @@ RUN mkdir -p /app/lib && \
 # ─────────────────────────────────────────────────────────────────────────
 # Runtime base: slim CUDA runtime (no compiler/dev headers)
 # ─────────────────────────────────────────────────────────────────────────
-FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS base
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu26.04 AS base
 
 RUN apt-get update && \
     apt-get install -y libgomp1 curl && \

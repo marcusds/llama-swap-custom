@@ -7,8 +7,8 @@ and bump anything stale. Upstream llama.cpp lags; this fleet does not.
 
 | Component | Pinned in | Check |
 |---|---|---|
-| oneAPI | `Dockerfile` `ONEAPI_VERSION`, `build.yml` fleet matrix + `oneapi_version` defaults | Docker Hub `intel/deep-learning-essentials` tags (`YYYY.M.P-devel-ubuntu24.04`) |
-| CUDA | `Dockerfile.cuda` `CUDA_VERSION` (3 places), `build.yml` fleet matrix | Docker Hub `nvidia/cuda` tags (`X.Y.Z-devel-ubuntu24.04`, amd64 + arm64) |
+| oneAPI | `Dockerfile` `ONEAPI_VERSION`, `build.yml` fleet matrix + `oneapi_version` defaults | Docker Hub `intel/deep-learning-essentials` tags (`YYYY.M.P-devel-ubuntu26.04`) |
+| CUDA | `Dockerfile.cuda` `CUDA_VERSION` (3 places), `build.yml` fleet matrix | Docker Hub `nvidia/cuda` tags (`X.Y.Z-devel-ubuntu26.04`, amd64 + arm64) |
 | NEO / IGC / gmmlib | `Dockerfile` (`COMPUTE_RUNTIME_VERSION`, `IGC_VERSION*`, `IGDGMM_VERSION`), `build.yml` non-legacy `igc`/`neo` outputs | `intel/compute-runtime` releases; take the IGC + gmmlib **that release's notes pair it with**, never a newer IGC on its own |
 | Level Zero | `Dockerfile` `LEVEL_ZERO_VERSION` | `oneapi-src/level-zero` releases (`libze1`/`libze-dev` `+u24.04` debs) |
 | Go | `golang:X-bookworm` in both Dockerfiles | Docker Hub `golang` |
@@ -20,8 +20,10 @@ Rules:
 
 - `llama-swap-sycl-multigpu` stays on oneAPI 2025.3.3 + NEO 25.40 / IGC 2.20.5
   on purpose (multi-GPU fallback). Do not bump it.
-- Stay on Ubuntu 24.04 until Level Zero publishes `u26.04` debs or upstream
-  llama.cpp's `.devops/` images move.
+- Non-legacy SYCL and CUDA images are on Ubuntu 26.04 (`-ubuntu26.04` base
+  tags). Level Zero publishes no `u26.04` debs, so the `u24.04` ones are
+  installed on top (works; switch when `u26.04` appears). `multigpu` stays on
+  24.04 (oneAPI 2025.3.3 has no 26.04 image).
 - After a CUDA bump, check the bundled CCCL
   (`/usr/local/cuda/targets/*/include/cccl/cuda/std/__cccl/version.h`). CUB
   DeviceTopK needs CCCL >= 3.4.3; if the CTK bundles less, add
