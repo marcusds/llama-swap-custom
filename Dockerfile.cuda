@@ -4,9 +4,9 @@
 #   LLAMACPP_REF   git ref to build (tag like b9495, a commit sha, or a branch)
 #   LS_REPO        llama-swap git repo to build from
 #   LS_REF         llama-swap git ref to build (branch, tag, or sha)
-#   CUDA_VERSION   NVIDIA CUDA base image tag (e.g. 13.4.2)
+#   CUDA_VERSION   NVIDIA CUDA base image tag (e.g. 13.5.0)
 
-ARG CUDA_VERSION=13.4.2
+ARG CUDA_VERSION=13.5.0
 ARG LS_REPO=https://github.com/marcusds/llama-swap.git
 ARG LS_REF=memory-budget
 
@@ -104,7 +104,7 @@ RUN git init -q && \
 # it needs llama.cpp >= 2026-09-09 (b10700-ish), which the fleet always is.
 #
 # CUB DeviceTopK needs CCCL >= 3.4.3 (race fixed in NVIDIA/cccl#10627), else
-# top-k drops to the sort fallback. CTK 13.4.2 bundles exactly 3.4.3; on an
+# top-k drops to the sort fallback. CTK 13.5.0 bundles exactly 3.4.3; on an
 # older CTK add -DGGML_CUDA_CCCL_VERSION=v3.4.3 to fetch it from GitHub.
 #
 # LLAMA_BUILD_NUMBER: a --depth=1 clone makes `git rev-list --count HEAD` return
@@ -161,7 +161,7 @@ ARG TARGETARCH=amd64
 ARG LS_VER=265
 ARG LLAMACPP_REF=master
 ARG BUILD_DATE=N/A
-ARG CUDA_VERSION=13.4.2
+ARG CUDA_VERSION=13.5.0
 
 LABEL org.opencontainers.image.title="llama-swap-cuda" \
       org.opencontainers.image.description="llama-swap + llama.cpp (NVIDIA CUDA) built from source" \
@@ -205,7 +205,7 @@ ARG LS_REPO=https://github.com/marcusds/llama-swap.git
 ARG LS_REF=memory-budget
 ARG LLAMACPP_REF=master
 ARG BUILD_DATE=N/A
-ARG CUDA_VERSION=13.4.2
+ARG CUDA_VERSION=13.5.0
 
 LABEL org.opencontainers.image.title="llama-swap-cuda" \
       org.opencontainers.image.description="llama-swap + llama.cpp (NVIDIA CUDA) built from source" \
