@@ -20,7 +20,7 @@
 #                  model swap -- at the cost of an image that only runs on that
 #                  GPU architecture.
 #   COMPUTE_RUNTIME_VERSION / IGC_VERSION / IGDGMM_VERSION
-#                  Intel GPU userspace stack. Defaults to NEO 26.35 / IGC 2.41.5,
+#                  Intel GPU userspace stack. Defaults to NEO 26.40 / IGC 2.42.6,
 #                  ahead of upstream's 26.18 / 2.34.4 -- see the rationale on the
 #                  base stage. MULTI-GPU hosts hit a known bug in the
 #                  26.18-and-earlier line (ggml-org/llama.cpp#21747,
@@ -70,7 +70,7 @@ ARG LLAMACPP_REF=master
 ARG GGML_SYCL_F16=ON
 ARG GGML_SYCL_DEVICE_ARCH=""
 # Level Zero >= 1.29 renamed its debs level-zero/level-zero-devel -> libze1/libze-dev.
-ARG LEVEL_ZERO_VERSION=1.34.0
+ARG LEVEL_ZERO_VERSION=1.36.0
 ARG LEVEL_ZERO_UBUNTU_VERSION=u24.04
 
 # bash (not dash) so `set -o pipefail` works: the cmake output below is piped
@@ -105,11 +105,11 @@ RUN if [ -z "$(find /opt/intel -name dnnl-config.cmake -print -quit)" ]; then \
 # "gen compiler command failed" after only a -Waot-tool-not-found warning.
 # Install the same compute-runtime the final image uses, so the ISA we generate
 # matches the driver that will run it. JIT builds do not need ocloc.
-ARG IGC_VERSION=v2.41.5
-ARG IGC_VERSION_FULL=2_2.41.5+22716
-ARG COMPUTE_RUNTIME_VERSION=26.35.39758.10
-ARG COMPUTE_RUNTIME_VERSION_FULL=26.35.39758.10-0
-ARG IGDGMM_VERSION=22.10.0
+ARG IGC_VERSION=v2.42.6
+ARG IGC_VERSION_FULL=2_2.42.6+23070
+ARG COMPUTE_RUNTIME_VERSION=26.40.40196.8
+ARG COMPUTE_RUNTIME_VERSION_FULL=26.40.40196.8-0
+ARG IGDGMM_VERSION=22.10.2
 RUN if [ -n "${GGML_SYCL_DEVICE_ARCH}" ] && ! command -v ocloc >/dev/null; then \
         echo "AOT requested but ocloc missing -- installing compute-runtime ${COMPUTE_RUNTIME_VERSION}" && \
         mkdir -p /tmp/ocloc && cd /tmp/ocloc && \
@@ -196,8 +196,8 @@ RUN mkdir -p /app/lib && \
 # ─────────────────────────────────────────────────────────────────────────
 FROM intel/deep-learning-essentials:${ONEAPI_VERSION} AS base
 
-# NEO 26.35 + its matching IGC 2.41.5 / gmmlib 22.10.0 (pairing per the NEO
-# 26.35 release notes, which also pull in Level Zero 1.32.0). Newer than
+# NEO 26.40 + its matching IGC 2.42.6 / gmmlib 22.10.2 (pairing per the NEO
+# 26.40 release notes, which build against Level Zero 1.34.0). Newer than
 # upstream's 26.18 default, and deliberately so: this is the performance-
 # relevant half of the stack -- the IGC is what compiles our SPIR-V/AOT kernels
 # -- so the fleet tracks the current NEO rather than upstream's pin.
@@ -215,11 +215,11 @@ FROM intel/deep-learning-essentials:${ONEAPI_VERSION} AS base
 #   IGC_VERSION=v2.20.5 IGC_VERSION_FULL=2_2.20.5+19972
 #   COMPUTE_RUNTIME_VERSION=25.40.35563.10
 #   COMPUTE_RUNTIME_VERSION_FULL=25.40.35563.10-0 IGDGMM_VERSION=22.8.2
-ARG IGC_VERSION=v2.41.5
-ARG IGC_VERSION_FULL=2_2.41.5+22716
-ARG COMPUTE_RUNTIME_VERSION=26.35.39758.10
-ARG COMPUTE_RUNTIME_VERSION_FULL=26.35.39758.10-0
-ARG IGDGMM_VERSION=22.10.0
+ARG IGC_VERSION=v2.42.6
+ARG IGC_VERSION_FULL=2_2.42.6+23070
+ARG COMPUTE_RUNTIME_VERSION=26.40.40196.8
+ARG COMPUTE_RUNTIME_VERSION_FULL=26.40.40196.8-0
+ARG IGDGMM_VERSION=22.10.2
 
 RUN mkdir /tmp/neo && cd /tmp/neo && \
     wget -q https://github.com/intel/intel-graphics-compiler/releases/download/$IGC_VERSION/intel-igc-core-${IGC_VERSION_FULL}_amd64.deb && \
